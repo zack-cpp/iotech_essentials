@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  udp-responder:
+    build: .
+    container_name: udp-responder
+    # Tell this container to run the UDP script
+    command: ["python", "-u", "udp_server_secure.py"]
+    restart: always
+    network_mode: "host"
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
+
+  oee-node:
+    build: .
+    container_name: oee-node
+    # Tell this container to run the OEE MQTT script
+    command: ["python", "-u", "oee_node.py"]
+    restart: always
+    # CRITICAL: Allows 'localhost' in the script to reach the host's MQTT broker
+    network_mode: "host" 
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"

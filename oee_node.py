@@ -1,0 +1,229 @@
+# ================ NEW CODE =======================
+
+import json
+import time
+import hmac
+import hashlib
+import threading
+import requests
+import paho.mqtt.client as mqtt
+import os
+
+# ================= CONFIG =================
+BROKER = "localhost"
+PORT = int(os.getenv("NODE_MQTT_PORT"))
+MQTT_TOPIC_REQUEST_CH_CONFIG = "config/counter/req"
+MQTT_TOPIC_COUNTER_CH_CONFIG = "config/counter/response"
+
+MQTT_USERNAME = os.getenv("NODE_MQTT_USERNAME")
+MQTT_PASSWORD = os.getenv("NODE_MQTT_PASSWORD")
+BASE_URL = os.getenv("NODE_BASE_URL")
+
+HEARTBEAT_INTERVAL = 10  # seconds
+# =========================================
+
+MESH_REPEATER = "G003"
+
+# ===== DEVICE ID MAPPING =====
+arr_device_ID_from = [
+    "C016",
+    "C010"
+]
+
+arr_device_ID_to = [
+    "e8390ea5-29d0-422d-9211-0796660a33c1",
+    "37e66a2e-b399-42be-aba2-83a200f5d077"
+]
+
+arr_device_secret = [
+    os.getenv("NODE_SECRETS_0"),
+    os.getenv("NODE_SECRETS_1")
+]
+
+arr_ok_ng = [
+    [0, 1],
+    [0, 1]
+]
+
+assert (
+    len(arr_device_ID_from)
+    == len(arr_device_ID_to)
+    == len(arr_device_secret)
+    == len(arr_ok_ng)
+), "Device mapping arrays length mismatch"
+# =============================
+
+def send_data(device_uid, secret, count, status, base_url):
+    timestamp = int(time.time())
+    payload = {"count": count, "status": status}
+    body_bytes = json.dumps(payload).encode("utf-8")
+    timestamp_str = str(timestamp)
+
+    try:
+        message = timestamp_str.encode("utf-8") + body_bytes
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            message,
+            hashlib.sha256
+        ).hexdigest()
+    except Exception as e:
+        print(f"[SEND] Sign error: {e}")
+        return
+
+    headers = {
+        "X-Device-Uid": device_uid,
+        "X-Timestamp": timestamp_str,
+        "X-Signature": signature,
+        "Content-Type": "application/json"
+    }
+
+    full_url = f"{base_url}/api/devices/counts"
+
+    try:
+        res = requests.post(full_url, data=body_bytes, headers=headers, timeout=5)
+        print(f"[SEND] {device_uid} {status} -> {res.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"[SEND] HTTP error: {e}")
+
+def send_heartbeat(device_uid, secret, base_url):
+    timestamp = int(time.time())
+    body_bytes = b""
+    timestamp_str = str(timestamp)
+
+    try:
+        message = timestamp_str.encode("utf-8") + body_bytes
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            message,
+            hashlib.sha256
+        ).hexdigest()
+    except Exception as e:
+        print(f"[HB] Sign error: {e}")
+        return
+
+    headers = {
+        "X-Device-Uid": device_uid,
+        "X-Timestamp": timestamp_str,
+        "X-Signature": signature,
+    }
+
+    try:
+        res = requests.post(
+            f"{base_url}/api/devices/heartbeat",
+            data=body_bytes,
+            headers=headers,
+            timeout=5
+        )
+        print(f"[HB] {device_uid} -> {res.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"[HB] HTTP error: {e}")
+
+def heartbeat_loop():
+    while True:
+        for uid, secret in zip(arr_device_ID_to, arr_device_secret):
+            send_heartbeat(uid, secret, BASE_URL)
+        time.sleep(HEARTBEAT_INTERVAL)
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        print("[MQTT] Connected")
+        #client.subscribe(TOPIC)
+        for device_id in arr_device_ID_from:
+            topic = f"{device_id}/counting"
+            client.subscribe(topic)
+            print(f"[MQTT] Subscribed to {topic}")
+        
+        # subscribe to config response topic
+        client.subscribe(MQTT_TOPIC_COUNTER_CH_CONFIG)
+        print(f"[MQTT] Subscribed to {MQTT_TOPIC_COUNTER_CH_CONFIG}")
+
+        # publish request config (only once after connect)
+        # publish config request for each node
+        for node_id in arr_device_ID_from:
+            doc = {
+                "repeater_id": MESH_REPEATER,
+                "node_id": node_id
+            }
+            payload = json.dumps(doc)
+            client.publish(MQTT_TOPIC_REQUEST_CH_CONFIG, payload)
+            print(f"[MQTT] Sent config request: {payload}")
+        print(f"[MQTT] Published config request to {MQTT_TOPIC_REQUEST_CH_CONFIG}")
+
+    else:
+        print(f"[MQTT] Connect failed rc={reason_code}")
+
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    print("[MQTT] Disconnected")
+
+def on_message(client, userdata, msg):
+    topic = msg.topic
+    try:
+        payload_str = msg.payload.decode('utf-8', errors='replace')
+
+        # ===== CONFIG RESPONSE =====
+        if topic == MQTT_TOPIC_COUNTER_CH_CONFIG:
+            print(f"[CONFIG RESPONSE] {payload_str}")
+            return
+
+        for i, device_id in enumerate(arr_device_ID_from):
+            target_topic = f"{device_id}/counting"
+            
+            if topic == target_topic:
+                print(f"[MQTT] Incoming from {device_id}: {payload_str}")
+                
+                try:
+                    data = json.loads(payload_str)
+                    
+                    # 1. Extract the channel from the JSON payload
+                    channel = data.get("channel")
+                    
+                    # 2. Get the OK and NG channel numbers for this specific device
+                    ok_channel = arr_ok_ng[i][0]
+                    ng_channel = arr_ok_ng[i][1]
+                    
+                    # 3. Determine the status based on the channel
+                    if channel == ok_channel:
+                        status = "OK"
+                    elif channel == ng_channel:
+                        status = "NG"
+                    else:
+                        print(f"[MQTT] Ignored: Channel {channel} is not mapped as OK or NG for {device_id}.")
+                        return # Stop here, don't send unknown channels to the cloud
+                    
+                    # 4. Extract count (default to 1 if not present in your JSON)
+                    count = data.get("count", 1) 
+                    
+                    # Forward to Cloud API with the new dynamic status
+                    send_data(
+                        arr_device_ID_to[i], 
+                        arr_device_secret[i], 
+                        count, 
+                        status, 
+                        BASE_URL
+                    )
+                except json.JSONDecodeError:
+                    print(f"[MQTT] Error: Received invalid JSON from {device_id}")
+                return
+
+    except Exception as e:
+        print(f"[MQTT] Error processing message on topic {topic}: {e}")
+
+
+# ================= STARTUP =================
+
+# Start heartbeat thread
+threading.Thread(
+    target=heartbeat_loop,
+    daemon=True
+).start()
+
+client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+client.reconnect_delay_set(min_delay=1, max_delay=30)
+
+client.on_connect = on_connect
+client.on_disconnect = on_disconnect
+client.on_message = on_message
+
+client.connect(BROKER, PORT, keepalive=60)
+client.loop_forever()
