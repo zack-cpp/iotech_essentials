@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   udp-responder:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: udp-responder
     # Tell this container to run the UDP script
     command: ["python", "-u", "udp_server_secure.py"]
@@ -16,7 +18,9 @@ services:
         max-file: "3"
 
   oee-node:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: oee-node
     # Tell this container to run the OEE MQTT script
     command: ["python", "-u", "oee_node.py"]
