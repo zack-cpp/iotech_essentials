@@ -8,6 +8,7 @@ import threading
 import requests
 import paho.mqtt.client as mqtt
 import os
+from datetime import datetime
 
 # ================= CONFIG =================
 BROKER = "localhost"
@@ -52,6 +53,30 @@ assert (
     == len(arr_ok_ng)
 ), "Device mapping arrays length mismatch"
 # =============================
+
+def log_mqtt_message(topic, payload):
+    """
+    Logs every MQTT message to a file based on the current date.
+    Creates a new file automatically if it doesn't exist.
+    """
+    try:
+        # File name respects current date/time (e.g., mqtt_log_2026-03-26.log)
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        log_dir = "logs"
+        log_filename = f"{log_dir}/mqtt_log_{current_date}.log"
+
+        # Ensure the 'logs' directory exists inside the container
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        # Exact system time for the log entry inside the file
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # "a" mode creates the file if it doesn't exist and appends to it
+        with open(log_filename, "a", encoding="utf-8") as f:
+            f.write(f"[{current_time}] TOPIC: {topic} | PAYLOAD: {payload}\n")
+    except Exception as e:
+        print(f"[LOGGING ERROR] Failed to write to log: {e}")
 
 def send_data(device_uid, secret, count, status, base_url):
     timestamp = int(time.time())
@@ -159,6 +184,8 @@ def on_message(client, userdata, msg):
     topic = msg.topic
     try:
         payload_str = msg.payload.decode('utf-8', errors='replace')
+
+        log_mqtt_message(topic, payload_str)
 
         # ===== CONFIG RESPONSE =====
         if topic == MQTT_TOPIC_COUNTER_CH_CONFIG:
