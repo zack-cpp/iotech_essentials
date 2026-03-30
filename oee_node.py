@@ -1,5 +1,3 @@
-# ================ NEW CODE =======================
-
 import json
 import time
 import hmac
@@ -9,6 +7,9 @@ import requests
 import paho.mqtt.client as mqtt
 import os
 from datetime import datetime
+from collections import defaultdict
+import queue
+import concurrent.futures
 
 # ================= CONFIG =================
 BROKER = "localhost"
@@ -54,6 +55,20 @@ assert (
 ), "Device mapping arrays length mismatch"
 # =============================
 
+# Rate limiting tracking - last send time per device
+last_send_time = defaultdict(float)
+send_lock = threading.Lock()
+
+# Message queue per device for rate-limited messages
+device_message_queues = defaultdict(queue.Queue)
+queue_processor_lock = threading.Lock()
+
+# Thread pool for non-blocking HTTP requests
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+
+# Track if queue processor is running per device
+queue_processor_running = defaultdict(bool)
+
 def log_mqtt_message(topic, payload):
     """
     Logs every MQTT message to a file based on the current date.
@@ -78,7 +93,8 @@ def log_mqtt_message(topic, payload):
     except Exception as e:
         print(f"[LOGGING ERROR] Failed to write to log: {e}")
 
-def send_data(device_uid, secret, count, status, base_url):
+def _send_data_blocking(device_uid, secret, count, status, base_url):
+    """Internal blocking function that actually sends the data"""
     timestamp = int(time.time())
     payload = {"count": count, "status": status}
     body_bytes = json.dumps(payload).encode("utf-8")
@@ -93,7 +109,7 @@ def send_data(device_uid, secret, count, status, base_url):
         ).hexdigest()
     except Exception as e:
         print(f"[SEND] Sign error: {e}")
-        return
+        return False
 
     headers = {
         "X-Device-Uid": device_uid,
@@ -107,8 +123,82 @@ def send_data(device_uid, secret, count, status, base_url):
     try:
         res = requests.post(full_url, data=body_bytes, headers=headers, timeout=5)
         print(f"[SEND] {device_uid} {status} -> {res.status_code}")
+        return res.status_code == 200
     except requests.exceptions.RequestException as e:
         print(f"[SEND] HTTP error: {e}")
+        return False
+
+def _process_device_queue(device_uid, secret, base_url):
+    """
+    Background processor that sends queued messages for a device
+    when rate limit allows (1 second between sends)
+    """
+    while True:
+        current_time = time.time()
+        
+        with send_lock:
+            time_since_last_send = current_time - last_send_time[device_uid]
+            
+            if time_since_last_send >= 1.0 and not device_message_queues[device_uid].empty():
+                # Get next message from queue
+                msg_data = device_message_queues[device_uid].get_nowait()
+                
+                # Update last send time
+                last_send_time[device_uid] = current_time
+            else:
+                # Need to wait - release lock and sleep
+                wait_time = max(0.1, 1.0 - time_since_last_send)
+                # Check if queue is empty, if so, exit processor
+                if device_message_queues[device_uid].empty():
+                    with queue_processor_lock:
+                        queue_processor_running[device_uid] = False
+                    return
+                # Release lock while sleeping
+                pass
+        
+        # If we have a message to send, send it
+        if time_since_last_send >= 1.0 and msg_data:
+            count, status = msg_data
+            executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
+            msg_data = None
+        else:
+            # Wait before checking again
+            time.sleep(0.1)
+
+def send_data(device_uid, secret, count, status, base_url):
+    """
+    Non-blocking send_data function with rate limiting (max once per second per device)
+    Messages that exceed rate limit are queued and sent later
+    """
+    current_time = time.time()
+    
+    with send_lock:
+        # Check if we can send immediately (at least 1 second since last send for this device)
+        if current_time - last_send_time[device_uid] >= 1.0:
+            # Update last send time immediately to prevent multiple quick calls
+            last_send_time[device_uid] = current_time
+            
+            # Submit the actual sending to thread pool (non-blocking)
+            executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
+            print(f"[SEND] {device_uid} - sent immediately")
+            return True
+        else:
+            # Rate limited - queue the message for later
+            msg_data = (count, status)
+            device_message_queues[device_uid].put(msg_data)
+            print(f"[SEND] {device_uid} - rate limited, message queued (queue size: {device_message_queues[device_uid].qsize()})")
+            
+            # Start queue processor if not already running for this device
+            with queue_processor_lock:
+                if not queue_processor_running[device_uid]:
+                    queue_processor_running[device_uid] = True
+                    threading.Thread(
+                        target=_process_device_queue,
+                        args=(device_uid, secret, base_url),
+                        daemon=True
+                    ).start()
+            
+            return False
 
 def send_heartbeat(device_uid, secret, base_url):
     timestamp = int(time.time())
@@ -221,6 +311,7 @@ def on_message(client, userdata, msg):
                     count = data.get("count", 1) 
                     
                     # Forward to Cloud API with the new dynamic status
+                    # This is now non-blocking and rate-limited with queuing
                     send_data(
                         arr_device_ID_to[i], 
                         arr_device_secret[i], 

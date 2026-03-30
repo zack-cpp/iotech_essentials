@@ -1,12 +1,9 @@
-version: '3.8'
-
 services:
   udp-responder:
     build:
       context: .
       network: host
     container_name: udp-responder
-    # Tell this container to run the UDP script
     command: ["python", "-u", "udp_server_secure.py"]
     restart: always
     network_mode: "host"
@@ -17,19 +14,33 @@ services:
         max-size: "10mb"
         max-file: "3"
 
+  db:
+    image: postgres:15-alpine
+    container_name: iot-db
+    restart: always
+    env_file: .env
+    ports:
+      - "5433:5432" 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   oee-node:
     build:
       context: .
       network: host
     container_name: oee-node
-    # Tell this container to run the OEE MQTT script
     command: ["python", "-u", "oee_node.py"]
     restart: always
-    # CRITICAL: Allows 'localhost' in the script to reach the host's MQTT broker
     network_mode: "host" 
     env_file: .env
+    depends_on:
+      - db
     logging:
       driver: "json-file"
       options:
         max-size: "10mb"
         max-file: "3"
+
+# THIS SECTION WAS MISSING:
+volumes:
+  postgres_data:
