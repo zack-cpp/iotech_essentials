@@ -28,22 +28,18 @@ MESH_REPEATER = "G003"
 
 # ===== DEVICE ID MAPPING =====
 arr_device_ID_from = [
-    "C016",
-    "C010"
+    "C071"
 ]
 
 arr_device_ID_to = [
-    "e8390ea5-29d0-422d-9211-0796660a33c1",
-    "37e66a2e-b399-42be-aba2-83a200f5d077"
+    "3507fb75-3180-4e30-8681-5d10b6545ea0"
 ]
 
 arr_device_secret = [
-    os.getenv("NODE_SECRETS_0"),
-    os.getenv("NODE_SECRETS_1")
+    os.getenv("NODE_SECRETS_0")
 ]
 
 arr_ok_ng = [
-    [0, 1],
     [0, 1]
 ]
 
