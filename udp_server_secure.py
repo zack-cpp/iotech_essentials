@@ -5,7 +5,7 @@ import time
 import os
 
 PORT = int(os.getenv("PORT"))
-SECRET_KEY = os.getenv("SECRET_KEY").encode('utf-8')
+SECRET_KEY = os.getenv("UDP_SECRET_KEY").encode('utf-8')
 
 # 2. Time window (in seconds) to accept a message. Prevents replay attacks.
 MAX_TIME_DIFF = 10

@@ -47,3 +47,73 @@ class DeviceDB:
                 return rows
         finally:
             conn.close()
+
+    def get_all_devices(self):
+        """Fetches all devices for the UI."""
+        query = "SELECT id, gateway_id, device_id_from, device_id_to, device_secret, ok_channel, ng_channel FROM devices;"
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query)
+                return cur.fetchall()
+        finally:
+            conn.close()
+
+    def add_device(self, data):
+        """Adds a new device mapping."""
+        query = """
+            INSERT INTO devices (gateway_id, device_id_from, device_id_to, device_secret, ok_channel, ng_channel)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (
+                    data.get('gateway_id', self.gateway_id),
+                    data['device_id_from'],
+                    data['device_id_to'],
+                    data['device_secret'],
+                    data['ok_channel'],
+                    data['ng_channel']
+                ))
+                new_id = cur.fetchone()[0]
+                conn.commit()
+                return new_id
+        finally:
+            conn.close()
+
+    def update_device(self, device_id, data):
+        """Updates an existing device mapping."""
+        query = """
+            UPDATE devices 
+            SET gateway_id = %s, device_id_from = %s, device_id_to = %s, device_secret = %s, ok_channel = %s, ng_channel = %s
+            WHERE id = %s;
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (
+                    data.get('gateway_id', self.gateway_id),
+                    data['device_id_from'],
+                    data['device_id_to'],
+                    data['device_secret'],
+                    data['ok_channel'],
+                    data['ng_channel'],
+                    device_id
+                ))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_device(self, device_id):
+        """Deletes a device mapping."""
+        query = "DELETE FROM devices WHERE id = %s;"
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (device_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()

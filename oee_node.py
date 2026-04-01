@@ -10,12 +10,14 @@ from datetime import datetime
 from collections import defaultdict
 import queue
 import concurrent.futures
+import sys
+from database import DeviceDB
 
 # ================= CONFIG =================
-BROKER = "localhost"
+BROKER = os.getenv("NODE_MQTT_HOST")
 PORT = int(os.getenv("NODE_MQTT_PORT"))
-MQTT_TOPIC_REQUEST_CH_CONFIG = "config/counter/req"
-MQTT_TOPIC_COUNTER_CH_CONFIG = "config/counter/response"
+MQTT_TOPIC_REQUEST_CH_CONFIG = os.getenv("NODE_MQTT_TOPIC_REQ")
+MQTT_TOPIC_COUNTER_CH_CONFIG = os.getenv("NODE_MQTT_TOPIC_RES")
 
 MQTT_USERNAME = os.getenv("NODE_MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("NODE_MQTT_PASSWORD")
@@ -24,32 +26,37 @@ BASE_URL = os.getenv("NODE_BASE_URL")
 HEARTBEAT_INTERVAL = 10  # seconds
 # =========================================
 
-MESH_REPEATER = "G003"
+# MESH_REPEATER = "G003"
 
-# ===== DEVICE ID MAPPING =====
-arr_device_ID_from = [
-    "C071"
-]
+# ===== DEVICE ID MAPPING (DYNAMIC) =====
+arr_device_ID_from = []
+arr_device_ID_to = []
+arr_device_secret = []
+arr_ok_ng = []
 
-arr_device_ID_to = [
-    "3507fb75-3180-4e30-8681-5d10b6545ea0"
-]
+def load_device_config():
+    try:
+        db = DeviceDB()
+        mappings = db.load_mappings()
+        
+        if not mappings:
+            print("[CONFIG] WARNING: No device mappings found in the database for this gateway.")
+            return
+            
+        for row in mappings:
+            arr_device_ID_from.append(row['device_id_from'])
+            arr_device_ID_to.append(row['device_id_to'])
+            arr_device_secret.append(row['device_secret'])
+            arr_ok_ng.append([row['ok_channel'], row['ng_channel']])
+            
+        print(f"[CONFIG] Successfully loaded {len(mappings)} device mappings.")
+    except Exception as e:
+        print(f"[CRITICAL] Error loading mappings from database: {e}")
+        print("[CRITICAL] Stopping service execution.")
+        sys.exit(1)
 
-arr_device_secret = [
-    os.getenv("NODE_SECRETS_0")
-]
-
-arr_ok_ng = [
-    [0, 1]
-]
-
-assert (
-    len(arr_device_ID_from)
-    == len(arr_device_ID_to)
-    == len(arr_device_secret)
-    == len(arr_ok_ng)
-), "Device mapping arrays length mismatch"
-# =============================
+load_device_config()
+# =======================================
 
 # Rate limiting tracking - last send time per device
 last_send_time = defaultdict(float)
@@ -250,15 +257,15 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
         # publish request config (only once after connect)
         # publish config request for each node
-        for node_id in arr_device_ID_from:
-            doc = {
-                "repeater_id": MESH_REPEATER,
-                "node_id": node_id
-            }
-            payload = json.dumps(doc)
-            client.publish(MQTT_TOPIC_REQUEST_CH_CONFIG, payload)
-            print(f"[MQTT] Sent config request: {payload}")
-        print(f"[MQTT] Published config request to {MQTT_TOPIC_REQUEST_CH_CONFIG}")
+        # for node_id in arr_device_ID_from:
+        #     doc = {
+        #         "repeater_id": MESH_REPEATER,
+        #         "node_id": node_id
+        #     }
+        #     payload = json.dumps(doc)
+        #     client.publish(MQTT_TOPIC_REQUEST_CH_CONFIG, payload)
+        #     print(f"[MQTT] Sent config request: {payload}")
+        # print(f"[MQTT] Published config request to {MQTT_TOPIC_REQUEST_CH_CONFIG}")
 
     else:
         print(f"[MQTT] Connect failed rc={reason_code}")

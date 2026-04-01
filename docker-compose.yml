@@ -23,6 +23,7 @@ services:
       - "5433:5432" 
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   oee-node:
     build:
@@ -33,6 +34,26 @@ services:
     restart: always
     network_mode: "host" 
     env_file: .env
+    depends_on:
+      - db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
+
+  web-ui:
+    build:
+      context: .
+    container_name: web-ui
+    command: ["python", "-u", "web_server.py"]
+    restart: always
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
     depends_on:
       - db
     logging:

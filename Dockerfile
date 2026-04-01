@@ -9,5 +9,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/logs
 
-# Copy all python scripts into the container
+# Copy all python scripts and frontend into the container
 COPY *.py .
+COPY static/ static/

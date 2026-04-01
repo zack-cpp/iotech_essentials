@@ -10,9 +10,9 @@ import paho.mqtt.client as mqtt
 import os
 
 # ================= CONFIG =================
-BROKER = "localhost"
+BROKER = os.getenv("NODE_MQTT_HOST")
 PORT = int(os.getenv("NODE_MQTT_PORT"))
-TOPIC = "counter/mesin/jobsend"
+TOPIC = os.getenv("INSPECT_MQTT_TOPIC")
 
 MQTT_USERNAME = os.getenv("NODE_MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("NODE_MQTT_PASSWORD")
@@ -35,8 +35,8 @@ arr_device_ID_to = [
 
 # DEVICE_SECRET for API (same index!)
 arr_device_secret = [
-  "AsWtA0I-dPRkWWGlZp-M_jfNZ94V2aoh97F2lk5fOAg",
-  "IzR39wTVo5bOD6WUDG2MjW-9JMUh2LPwlTV9baUh72U"
+  os.getenv("INSPECT_SECRET_0"),
+  os.getenv("INSPECT_SECRET_1")
 ]
 
 # TOTAL SENSOR PER DEVICE
