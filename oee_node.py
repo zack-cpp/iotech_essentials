@@ -120,7 +120,7 @@ def _send_data_blocking(device_uid, secret, count, status, base_url, device_time
             hashlib.sha256
         ).hexdigest()
     except Exception as e:
-        print(f"[{device_time}] [SEND] Sign error: {e}")
+        print(f"[SEND] Sign error: {e}")
         return False
 
     headers = {
@@ -134,10 +134,10 @@ def _send_data_blocking(device_uid, secret, count, status, base_url, device_time
 
     try:
         res = requests.post(full_url, data=body_bytes, headers=headers, timeout=5)
-        print(f"[{device_time}] [SEND] {device_uid} {status} -> {res.status_code}")
+        print(f"[SEND] {device_uid} {status} -> {res.status_code}")
         return res.status_code == 200
     except requests.exceptions.RequestException as e:
-        print(f"[{device_time}] [SEND] HTTP error: {e}")
+        print(f"[SEND] HTTP error: {e}")
         return False
 
 def _process_device_queue(device_uid, secret, base_url):
@@ -186,13 +186,13 @@ def send_data(device_uid, secret, count, status, base_url, device_time="unknown"
             
             # Submit the actual sending to thread pool (non-blocking)
             executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url, device_time)
-            print(f"[{device_time}] [SEND] {device_uid} - sent immediately")
+            print(f"[SEND] {device_uid} - sent immediately")
             return True
         else:
             # Rate limited - queue the message for later
             msg_data = (count, status, device_time)
             device_message_queues[device_uid].put(msg_data)
-            print(f"[{device_time}] [SEND] {device_uid} - rate limited, message queued (queue size: {device_message_queues[device_uid].qsize()})")
+            print(f"[SEND] {device_uid} - rate limited, message queued (queue size: {device_message_queues[device_uid].qsize()})")
             
             # Start queue processor if not already running for this device
             with queue_processor_lock:
