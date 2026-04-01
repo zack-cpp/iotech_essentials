@@ -105,7 +105,7 @@ def log_mqtt_message(topic, payload):
     except Exception as e:
         print(f"[LOGGING ERROR] Failed to write to log: {e}")
 
-def _send_data_blocking(device_uid, secret, count, status, base_url):
+def _send_data_blocking(device_uid, secret, count, status, base_url, device_time="unknown"):
     """Internal blocking function that actually sends the data"""
     timestamp = int(time.time())
     payload = {"count": count, "status": status}
@@ -120,7 +120,7 @@ def _send_data_blocking(device_uid, secret, count, status, base_url):
             hashlib.sha256
         ).hexdigest()
     except Exception as e:
-        print(f"[SEND] Sign error: {e}")
+        print(f"[{device_time}] [SEND] Sign error: {e}")
         return False
 
     headers = {
@@ -134,10 +134,10 @@ def _send_data_blocking(device_uid, secret, count, status, base_url):
 
     try:
         res = requests.post(full_url, data=body_bytes, headers=headers, timeout=5)
-        print(f"[SEND] {device_uid} {status} -> {res.status_code}")
+        print(f"[{device_time}] [SEND] {device_uid} {status} -> {res.status_code}")
         return res.status_code == 200
     except requests.exceptions.RequestException as e:
-        print(f"[SEND] HTTP error: {e}")
+        print(f"[{device_time}] [SEND] HTTP error: {e}")
         return False
 
 def _process_device_queue(device_uid, secret, base_url):
@@ -154,7 +154,7 @@ def _process_device_queue(device_uid, secret, base_url):
                 queue_processor_running[device_uid] = False
             return
             
-        count, status = msg_data
+        count, status, device_time = msg_data
         
         # Enforce exact rate limit
         while True:
@@ -169,9 +169,9 @@ def _process_device_queue(device_uid, secret, base_url):
             time.sleep(1.5 - elapsed)
             
         # Fire!
-        executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
+        executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url, device_time)
 
-def send_data(device_uid, secret, count, status, base_url):
+def send_data(device_uid, secret, count, status, base_url, device_time="unknown"):
     """
     Non-blocking send_data function with rate limiting (max once per second per device)
     Messages that exceed rate limit are queued and sent later
@@ -185,14 +185,14 @@ def send_data(device_uid, secret, count, status, base_url):
             last_send_time[device_uid] = current_time
             
             # Submit the actual sending to thread pool (non-blocking)
-            executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
-            print(f"[SEND] {device_uid} - sent immediately")
+            executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url, device_time)
+            print(f"[{device_time}] [SEND] {device_uid} - sent immediately")
             return True
         else:
             # Rate limited - queue the message for later
-            msg_data = (count, status)
+            msg_data = (count, status, device_time)
             device_message_queues[device_uid].put(msg_data)
-            print(f"[SEND] {device_uid} - rate limited, message queued (queue size: {device_message_queues[device_uid].qsize()})")
+            print(f"[{device_time}] [SEND] {device_uid} - rate limited, message queued (queue size: {device_message_queues[device_uid].qsize()})")
             
             # Start queue processor if not already running for this device
             with queue_processor_lock:
@@ -316,6 +316,15 @@ def on_message(client, userdata, msg):
                     # 4. Extract count (default to 1 if not present in your JSON)
                     count = data.get("count", 1) 
                     
+                    device_time_raw = data.get("timestamp")
+                    device_time = "unknown"
+                    if device_time_raw:
+                        try:
+                            dt = datetime.fromtimestamp(int(device_time_raw) / 1000.0)
+                            device_time = dt.strftime('%H:%M:%S.%f')[:-3]
+                        except (ValueError, TypeError):
+                            device_time = str(device_time_raw)
+                    
                     # Forward to Cloud API with the new dynamic status
                     # This is now non-blocking and rate-limited with queuing
                     send_data(
@@ -323,7 +332,8 @@ def on_message(client, userdata, msg):
                         arr_device_secret[i],
                         count,
                         status,
-                        BASE_URL
+                        BASE_URL,
+                        device_time
                     )
                 except json.JSONDecodeError:
                     print(f"[MQTT] Error: Received invalid JSON from {device_id}")
