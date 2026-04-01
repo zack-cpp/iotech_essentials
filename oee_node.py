@@ -142,7 +142,7 @@ def _process_device_queue(device_uid, secret, base_url):
         with send_lock:
             time_since_last_send = current_time - last_send_time[device_uid]
             
-            if time_since_last_send >= 1.0 and not device_message_queues[device_uid].empty():
+            if time_since_last_send >= 1.5 and not device_message_queues[device_uid].empty():
                 # Get next message from queue
                 msg_data = device_message_queues[device_uid].get_nowait()
                 
@@ -150,7 +150,7 @@ def _process_device_queue(device_uid, secret, base_url):
                 last_send_time[device_uid] = current_time
             else:
                 # Need to wait - release lock and sleep
-                wait_time = max(0.1, 1.0 - time_since_last_send)
+                wait_time = max(0.1, 1.5 - time_since_last_send)
                 # Check if queue is empty, if so, exit processor
                 if device_message_queues[device_uid].empty():
                     with queue_processor_lock:
@@ -160,7 +160,7 @@ def _process_device_queue(device_uid, secret, base_url):
                 pass
         
         # If we have a message to send, send it
-        if time_since_last_send >= 1.0 and msg_data:
+        if time_since_last_send >= 1.5 and msg_data:
             count, status = msg_data
             executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
             msg_data = None
@@ -177,7 +177,7 @@ def send_data(device_uid, secret, count, status, base_url):
     
     with send_lock:
         # Check if we can send immediately (at least 1 second since last send for this device)
-        if current_time - last_send_time[device_uid] >= 1.0:
+        if current_time - last_send_time[device_uid] >= 1.5:
             # Update last send time immediately to prevent multiple quick calls
             last_send_time[device_uid] = current_time
             
@@ -316,10 +316,10 @@ def on_message(client, userdata, msg):
                     # Forward to Cloud API with the new dynamic status
                     # This is now non-blocking and rate-limited with queuing
                     send_data(
-                        arr_device_ID_to[i], 
-                        arr_device_secret[i], 
-                        count, 
-                        status, 
+                        arr_device_ID_to[i],
+                        arr_device_secret[i],
+                        count,
+                        status,
                         BASE_URL
                     )
                 except json.JSONDecodeError:
