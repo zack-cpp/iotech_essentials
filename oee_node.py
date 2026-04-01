@@ -13,6 +13,15 @@ import concurrent.futures
 import sys
 from database import DeviceDB
 
+# ========== DEBUG LOGGING ==========
+import builtins
+from datetime import datetime
+_original_print = builtins.print
+def _timestamped_print(*args, **kwargs):
+    _original_print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}]", *args, **kwargs)
+builtins.print = _timestamped_print
+# ===================================
+
 # ================= CONFIG =================
 BROKER = os.getenv("NODE_MQTT_HOST")
 PORT = int(os.getenv("NODE_MQTT_PORT"))
