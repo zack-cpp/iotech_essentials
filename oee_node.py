@@ -134,39 +134,33 @@ def _send_data_blocking(device_uid, secret, count, status, base_url):
 def _process_device_queue(device_uid, secret, base_url):
     """
     Background processor that sends queued messages for a device
-    when rate limit allows (1 second between sends)
+    enforcing exactly a 1.5 second rate limit between sends.
     """
     while True:
-        current_time = time.time()
-        
-        with send_lock:
-            time_since_last_send = current_time - last_send_time[device_uid]
+        try:
+            # Block until a message is available (timeout after 5s to cleanup idle threads)
+            msg_data = device_message_queues[device_uid].get(timeout=5.0)
+        except queue.Empty:
+            with queue_processor_lock:
+                queue_processor_running[device_uid] = False
+            return
             
-            if time_since_last_send >= 1.5 and not device_message_queues[device_uid].empty():
-                # Get next message from queue
-                msg_data = device_message_queues[device_uid].get_nowait()
-                
-                # Update last send time
-                last_send_time[device_uid] = current_time
-            else:
-                # Need to wait - release lock and sleep
-                wait_time = max(0.1, 1.5 - time_since_last_send)
-                # Check if queue is empty, if so, exit processor
-                if device_message_queues[device_uid].empty():
-                    with queue_processor_lock:
-                        queue_processor_running[device_uid] = False
-                    return
-                # Release lock while sleeping
-                pass
+        count, status = msg_data
         
-        # If we have a message to send, send it
-        if time_since_last_send >= 1.5 and msg_data:
-            count, status = msg_data
-            executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
-            msg_data = None
-        else:
-            # Wait before checking again
-            time.sleep(0.1)
+        # Enforce exact rate limit
+        while True:
+            current_time = time.time()
+            with send_lock:
+                elapsed = current_time - last_send_time[device_uid]
+                if elapsed >= 1.5:
+                    last_send_time[device_uid] = current_time
+                    break
+            
+            # Not enough time has passed. Sleep the precise remainder.
+            time.sleep(1.5 - elapsed)
+            
+        # Fire!
+        executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url)
 
 def send_data(device_uid, secret, count, status, base_url):
     """
