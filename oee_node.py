@@ -143,7 +143,7 @@ def _send_data_blocking(device_uid, secret, count, status, base_url, device_time
 def _process_device_queue(device_uid, secret, base_url):
     """
     Background processor that sends queued messages for a device
-    enforcing exactly a 1.5 second rate limit between sends.
+    enforcing exactly a 1.0 second rate limit between sends.
     """
     while True:
         try:
@@ -161,15 +161,17 @@ def _process_device_queue(device_uid, secret, base_url):
             current_time = time.time()
             with send_lock:
                 elapsed = current_time - last_send_time[device_uid]
-                if elapsed >= 1.5:
+                if elapsed >= 1.0:
                     last_send_time[device_uid] = current_time
                     break
             
             # Not enough time has passed. Sleep the precise remainder.
-            time.sleep(1.5 - elapsed)
+            time.sleep(1.0 - elapsed)
             
         # Fire!
-        executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url, device_time)
+        # executor.submit(_send_data_blocking, device_uid, secret, count, status, base_url, device_time)
+        # FIX: Call the blocking function directly so this thread waits for it to finish
+        _send_data_blocking(device_uid, secret, count, status, base_url, device_time)
 
 def send_data(device_uid, secret, count, status, base_url, device_time="unknown"):
     """
@@ -180,7 +182,7 @@ def send_data(device_uid, secret, count, status, base_url, device_time="unknown"
     
     with send_lock:
         # Check if we can send immediately (at least 1 second since last send for this device)
-        if current_time - last_send_time[device_uid] >= 1.5:
+        if current_time - last_send_time[device_uid] >= 1.0:
             # Update last send time immediately to prevent multiple quick calls
             last_send_time[device_uid] = current_time
             
@@ -346,10 +348,10 @@ def on_message(client, userdata, msg):
 # ================= STARTUP =================
 
 # Start heartbeat thread
-threading.Thread(
-    target=heartbeat_loop,
-    daemon=True
-).start()
+#threading.Thread(
+#    target=heartbeat_loop,
+#    daemon=True
+#).start()
 
 client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
