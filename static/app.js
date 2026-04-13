@@ -41,6 +41,7 @@ function renderTable() {
             <td><span class="secret-censor">${device.device_id_to}</span></td>
             <td><span class="secret-censor">••••${device.device_secret.slice(-4)}</span></td>
             <td>OK: ${device.ok_channel} | NG: ${device.ng_channel}</td>
+            <td id="metric-${device.device_id_from}"><span style="opacity:0.3; font-size:0.8rem; font-style:italic;">Awaiting data...</span></td>
             <td style="display:flex; gap:0.5rem;">
                 <button class="btn-icon" onclick="openModal('edit', ${device.id})">
                     <i data-lucide="edit-2"></i>
@@ -162,6 +163,48 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+
+// --- Live Telemetry WebSockets ---
+const socket = io();
+const socketStatus = document.getElementById('socketStatus');
+
+socket.on('connect', () => {
+    if(socketStatus) {
+        socketStatus.className = 'tag tag-ok';
+        socketStatus.innerHTML = '<span class="status-dot"></span> Live';
+        socketStatus.style.opacity = '1';
+    }
+});
+
+socket.on('disconnect', () => {
+    if(socketStatus) {
+        socketStatus.className = 'tag tag-ng';
+        socketStatus.innerHTML = '<span class="status-dot" style="background:var(--danger); box-shadow:0 0 8px var(--danger);"></span> Offline';
+        socketStatus.style.opacity = '0.7';
+    }
+});
+
+socket.on('live_device_metric', (payload) => {
+    const topicParts = payload.topic.split('/');
+    if (topicParts.length > 0) {
+        const deviceId = topicParts[0];
+        const metricCell = document.getElementById(`metric-${deviceId}`);
+        
+        if (metricCell) {
+            const tr = metricCell.closest('tr');
+            
+            // Flash effect on the row
+            tr.classList.remove('flash-update');
+            void tr.offsetWidth; // Trigger reflow to restart animation
+            tr.classList.add('flash-update');
+            
+            // Render beautiful UI badge
+            const channel = payload.data.channel !== undefined ? payload.data.channel : '-';
+            const count = payload.data.count || 1;
+            metricCell.innerHTML = `<span class="tag tag-ok" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);">Ch${channel} | Cnt: ${count}</span>`;
+        }
+    }
+});
 
 // Init
 document.addEventListener('DOMContentLoaded', fetchDevices);

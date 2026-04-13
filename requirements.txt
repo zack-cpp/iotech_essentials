@@ -3,3 +3,5 @@ requests
 psycopg2-binary
 Flask
 Flask-Cors
+Flask-SocketIO
+eventlet

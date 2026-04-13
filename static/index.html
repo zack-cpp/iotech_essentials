@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div class="blob blob-1"></div>
@@ -18,9 +20,14 @@
         <header class="glass-panel header">
             <div class="header-title">
                 <i data-lucide="cpu" class="icon-lg"></i>
-                <div>
-                    <h1>Device Management</h1>
-                    <p>OEE Edge Gateway Configuration</p>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div>
+                        <h1>Device Management</h1>
+                        <p>OEE Edge Gateway Configuration</p>
+                    </div>
+                    <div id="socketStatus" class="tag tag-ok" style="opacity: 0.5;">
+                        <span class="status-dot"></span> Disconnected
+                    </div>
                 </div>
             </div>
             <button class="btn btn-primary" onclick="openModal('add')">
@@ -37,6 +44,7 @@
                         <th>Cloud ID (UUID)</th>
                         <th>Secret</th>
                         <th>OK/NG Channels</th>
+                        <th>Live Metric</th>
                         <th>Actions</th>
                     </tr>
                 </thead>

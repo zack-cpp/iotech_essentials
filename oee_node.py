@@ -43,10 +43,23 @@ arr_device_ID_to = []
 arr_device_secret = []
 arr_ok_ng = []
 
-def load_device_config():
+def load_device_config(client=None):
+    global arr_device_ID_from, arr_device_ID_to, arr_device_secret, arr_ok_ng
     try:
         db = DeviceDB()
         mappings = db.load_mappings()
+        
+        # Unsubscribe from outdated device mapping topics
+        if client and client.is_connected():
+            for device_id in arr_device_ID_from:
+                target_topic = f"{device_id}/counting"
+                client.unsubscribe(target_topic)
+                
+        # Wipe in-memory caches
+        arr_device_ID_from.clear()
+        arr_device_ID_to.clear()
+        arr_device_secret.clear()
+        arr_ok_ng.clear()
         
         if not mappings:
             print("[CONFIG] WARNING: No device mappings found in the database for this gateway.")
@@ -58,11 +71,20 @@ def load_device_config():
             arr_device_secret.append(row['device_secret'])
             arr_ok_ng.append([row['ok_channel'], row['ng_channel']])
             
+        # Resubscribe to dynamically populated topics
+        if client and client.is_connected():
+            for device_id in arr_device_ID_from:
+                target_topic = f"{device_id}/counting"
+                client.subscribe(target_topic)
+                print(f"[MQTT] Hot-swapped and subscribed to {target_topic}")
+            
         print(f"[CONFIG] Successfully loaded {len(mappings)} device mappings.")
     except Exception as e:
         print(f"[CRITICAL] Error loading mappings from database: {e}")
-        print("[CRITICAL] Stopping service execution.")
-        sys.exit(1)
+        # Only crash process if this is the initial boot
+        if client is None:
+            print("[CRITICAL] Stopping service execution.")
+            sys.exit(1)
 
 load_device_config()
 # =======================================
@@ -250,15 +272,20 @@ def heartbeat_loop():
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         print("[MQTT] Connected")
-        #client.subscribe(TOPIC)
+        
+        # Subscribe to dynamically loaded device topics
         for device_id in arr_device_ID_from:
             topic = f"{device_id}/counting"
             client.subscribe(topic)
             print(f"[MQTT] Subscribed to {topic}")
-        
-        # subscribe to config response topic
+
+        # Subscribe to config request node
         client.subscribe(MQTT_TOPIC_COUNTER_CH_CONFIG)
         print(f"[MQTT] Subscribed to {MQTT_TOPIC_COUNTER_CH_CONFIG}")
+        
+        # Subscribe to dynamic Web UI reload config hook
+        client.subscribe("system/gateway/reload_config")
+        print("[MQTT] Subscribed to system/gateway/reload_config")
 
         # publish request config (only once after connect)
         # publish config request for each node
@@ -284,6 +311,12 @@ def on_message(client, userdata, msg):
         payload_str = msg.payload.decode('utf-8', errors='replace')
 
         log_mqtt_message(topic, payload_str)
+        
+        # ===== HOT SWAP SYSTEM SIGNAL =====
+        if topic == "system/gateway/reload_config":
+            print("[SYSTEM] Received hot-swap reload signal from Web UI!")
+            load_device_config(client)
+            return
 
         # ===== CONFIG RESPONSE =====
         if topic == MQTT_TOPIC_COUNTER_CH_CONFIG:

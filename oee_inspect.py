@@ -8,6 +8,8 @@ import threading
 import requests
 import paho.mqtt.client as mqtt
 import os
+import sys
+from database import DeviceDB
 
 # ================= CONFIG =================
 BROKER = os.getenv("NODE_MQTT_HOST")
@@ -22,36 +24,42 @@ HEARTBEAT_INTERVAL = 10  # seconds
 # =========================================
 
 
-# ===== DEVICE ID MAPPING =====
-arr_device_ID_from = [
-  "HAS-AI-0002",
-  "HAS-AI-0010"
-]
+# ===== DEVICE ID MAPPING (DYNAMIC) =====
+arr_device_ID_from = []
+arr_device_ID_to = []
+arr_device_secret = []
+arr_total_sensor = []
 
-arr_device_ID_to = [
-  "0bd548e2-1833-408d-a7f2-45166edaa80d",
-  "cc4bd528-5867-45e3-8034-9cb3462ea1e7"
-]
+def load_inspection_config(client=None):
+    global arr_device_ID_from, arr_device_ID_to, arr_device_secret, arr_total_sensor
+    try:
+        db = DeviceDB()
+        mappings = db.load_inspection_mappings()
+        
+        arr_device_ID_from.clear()
+        arr_device_ID_to.clear()
+        arr_device_secret.clear()
+        arr_total_sensor.clear()
+        
+        if not mappings:
+            print("[CONFIG] WARNING: No inspection device mappings found in the database.")
+            return
+            
+        for row in mappings:
+            arr_device_ID_from.append(row['device_id_from'])
+            arr_device_ID_to.append(row['device_id_to'])
+            arr_device_secret.append(row['device_secret'])
+            arr_total_sensor.append(row['total_sensor'])
+            
+        print(f"[CONFIG] Successfully loaded {len(mappings)} inspection device mappings.")
+    except Exception as e:
+        print(f"[CRITICAL] Error loading inspection mappings from database: {e}")
+        if client is None:
+            print("[CRITICAL] Stopping Inspection service execution.")
+            sys.exit(1)
 
-# DEVICE_SECRET for API (same index!)
-arr_device_secret = [
-  os.getenv("INSPECT_SECRET_0"),
-  os.getenv("INSPECT_SECRET_1")
-]
-
-# TOTAL SENSOR PER DEVICE
-arr_total_sensor = [
-  24,
-  16
-]
-
-assert (
-  len(arr_device_ID_from)
-  == len(arr_device_ID_to)
-  == len(arr_device_secret)
-  == len(arr_total_sensor)
-), "Device mapping arrays length mismatch"
-# =============================
+load_inspection_config()
+# =========================================
 
 
 def send_data(device_uid, secret, count, status, base_url):
@@ -131,7 +139,9 @@ def heartbeat_loop():
 def on_connect(client, userdata, flags, reason_code, properties):
   if reason_code == 0:
     print("[MQTT] Connected")
-    client.subscribe(TOPIC)
+    if TOPIC:
+      client.subscribe(TOPIC)
+    client.subscribe("system/gateway/reload_config")
   else:
     print(f"[MQTT] Connect failed rc={reason_code}")
 
@@ -141,6 +151,11 @@ def on_disconnect(client, userdata, reason_code, properties):
 
 def on_message(client, userdata, msg):
   try:
+    if msg.topic == "system/gateway/reload_config":
+      print("[SYSTEM] Received hot-swap reload signal from Web UI!")
+      load_inspection_config(client)
+      return
+
     payload = json.loads(msg.payload.decode())
 
     mesin_id = payload.get("MESIN_ID")
@@ -175,10 +190,10 @@ def on_message(client, userdata, msg):
 # ================= STARTUP =================
 
 # Start heartbeat thread
-threading.Thread(
-  target=heartbeat_loop,
-  daemon=True
-).start()
+# threading.Thread(
+#   target=heartbeat_loop,
+#   daemon=True
+# ).start()
 
 client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)

@@ -25,28 +25,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
-  oee-node:
-    build:
-      context: .
-      network: host
-    container_name: oee-node
-    command: ["python", "-u", "oee_node.py"]
-    restart: always
-    network_mode: "host" 
-    env_file: .env
-    depends_on:
-      - db
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10mb"
-        max-file: "3"
-
   web-ui:
     build:
       context: .
     container_name: web-ui
-    command: ["python", "-u", "web_server.py"]
     restart: always
     ports:
       - "5000:5000"
@@ -62,6 +44,5 @@ services:
         max-size: "10mb"
         max-file: "3"
 
-# THIS SECTION WAS MISSING:
 volumes:
   postgres_data:

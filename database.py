@@ -117,3 +117,85 @@ class DeviceDB:
                 return cur.rowcount > 0
         finally:
             conn.close()
+
+    # ================= INSPECTION DEVICES =================
+    
+    def load_inspection_mappings(self):
+        """Loads mappings specifically for the current gateway_id."""
+        query = """
+            SELECT device_id_from, device_id_to, device_secret, total_sensor
+            FROM inspection_devices
+            WHERE gateway_id = %s;
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (self.gateway_id,))
+                return cur.fetchall()
+        finally:
+            conn.close()
+
+    def get_all_inspection_devices(self):
+        query = "SELECT * FROM inspection_devices ORDER BY created_at DESC;"
+        conn = self.get_connection()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query)
+                return cur.fetchall()
+        finally:
+            conn.close()
+
+    def add_inspection_device(self, data):
+        query = """
+            INSERT INTO inspection_devices (gateway_id, device_id_from, device_id_to, device_secret, total_sensor)
+            VALUES (%s, %s, %s, %s, %s) RETURNING id;
+        """
+        conn = self.get_connection()
+        idx = None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (
+                    data.get('gateway_id', self.gateway_id),
+                    data['device_id_from'],
+                    data['device_id_to'],
+                    data['device_secret'],
+                    data['total_sensor']
+                ))
+                idx = cur.fetchone()[0]
+                conn.commit()
+            return idx
+        finally:
+            conn.close()
+
+    def update_inspection_device(self, device_id, data):
+        query = """
+            UPDATE inspection_devices 
+            SET gateway_id = %s, device_id_from = %s, device_id_to = %s, device_secret = %s, total_sensor = %s
+            WHERE id = %s;
+        """
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (
+                    data.get('gateway_id', self.gateway_id),
+                    data['device_id_from'],
+                    data['device_id_to'],
+                    data['device_secret'],
+                    data['total_sensor'],
+                    device_id
+                ))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def delete_inspection_device(self, device_id):
+        query = "DELETE FROM inspection_devices WHERE id = %s;"
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, (device_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()

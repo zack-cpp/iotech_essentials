@@ -162,3 +162,54 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px 
     .header { flex-direction: column; align-items: flex-start; gap: 1rem; }
     .table-container { padding: 0; border-radius: 0; border-left: none; border-right: none;}
 }
+
+/* --- Real-Time UI Styles --- */
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tag-ok {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.tag-ng {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px var(--success); }
+    100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+@keyframes highlightFlash {
+    0% { background-color: rgba(59, 130, 246, 0.4); }
+    100% { background-color: transparent; }
+}
+
+.flash-update {
+    animation: highlightFlash 1.5s ease-out forwards;
+}
