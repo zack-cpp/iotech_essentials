@@ -11,6 +11,59 @@ class DeviceDB:
         self.password = os.getenv("DB_PASSWORD")
         self.port = os.getenv("DB_PORT")
         self.gateway_id = os.getenv("GATEWAY_ID")
+        self.initialize_tables()
+
+    def initialize_tables(self):
+        """Standardizes database migrations by ensuring all required schema tables natively exist on boot."""
+        queries = [
+            """
+            CREATE TABLE IF NOT EXISTS devices (
+                id SERIAL PRIMARY KEY,
+                gateway_id VARCHAR(50) NOT NULL,
+                device_id_from VARCHAR(50) NOT NULL,
+                device_id_to VARCHAR(50) NOT NULL,
+                device_secret VARCHAR(100) NOT NULL,
+                ok_channel INT NOT NULL,
+                ng_channel INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS inspection_devices (
+                id SERIAL PRIMARY KEY,
+                gateway_id VARCHAR(50) NOT NULL,
+                device_id_from VARCHAR(50) NOT NULL,
+                device_id_to VARCHAR(50) NOT NULL,
+                device_secret VARCHAR(100) NOT NULL,
+                total_sensor INT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        ]
+        
+        # Use a localized quick connection loop for startup
+        retries = 3
+        conn = None
+        while retries > 0:
+            try:
+                conn = psycopg2.connect(
+                    host=self.host, database=self.database,
+                    user=self.user, password=self.password, port=self.port
+                )
+                with conn.cursor() as cur:
+                    for q in queries:
+                        cur.execute(q)
+                conn.commit()
+                print("[DATABASE] Auto-Migrations applied successfully! Application ready.")
+                break
+            except psycopg2.OperationalError:
+                retries -= 1
+                time.sleep(2)
+            except Exception as e:
+                print(f"[DATABASE] Auto-Migration Error: {e}")
+                break
+        if conn:
+            conn.close()
 
     def get_connection(self):
         """Attempts to connect to the DB with retries."""

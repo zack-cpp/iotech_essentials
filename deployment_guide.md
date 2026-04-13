@@ -65,3 +65,37 @@ Because this is a brand new edge installation without the `postgres_data` persis
 - The system will naturally execute `init.sql` during its very first PostgreSQL initialization! 
 - The `devices` and `inspection_devices` schema tables will be fully structured and auto-filled with your generic dummy configurations naturally upon startup!
 - Consequently, you will **not** experience the PostgreSQL `relation does not exist` debugging exceptions seen locally during mid-deployment schema overhauls.
+
+---
+
+## 6. Updating an Existing Device
+If the device is already successfully running an older version of the codebase (and contains a populated, persistent `postgres_data` volume), applying the latest source-code upgrades requires a slightly different approach.
+
+**Step-by-Step Update Strategy:**
+1. Pull down or overwrite the directory with the latest source code additions (ignoring `node_modules` just like during initial deployment).
+2. Ask Docker Compose to completely rebuild the React payload and Python images gracefully using the explicit flag `--remove-orphans` to delete legacy dismantled container bounds correctly:
+   ```bash
+   docker compose up -d --build --remove-orphans
+   ```
+
+**Database Schema Consistency**
+The system is designed with a self-healing schema sequence natively embedded in `database.py`. Upon starting the `web-ui` container, the backend will query your PostgreSQL array and actively inject any missing relational schemas natively (such as `inspection_devices` columns).
+
+This completely eliminates schema failures (`relation does not exist`) and securely preserves your active `postgres_data` volume across complex feature upgrades out-of-the-box.
+
+---
+
+## 7. Troubleshooting
+
+### Docker Build Fails: `dial tcp: lookup docker.mirrors... no such host`
+If your new device fails to build with an error resembling:
+> `failed to resolve source metadata for docker.io/library/python:3.11-slim... dial tcp: lookup docker.mirrors.ustc.edu.cn: no such host`
+
+This means your edge installation of Docker is configured to pull images from a dead or deprecated registry mirror (common in Chinese networks heavily relying on stale USTC/Tencent mirrors). 
+
+**Resolution:**
+Remove the dead mirrors from your Docker registry daemon settings:
+1. Open the configuration file natively on the device: `sudo nano /etc/docker/daemon.json`
+2. Erase the `"registry-mirrors": ["https://docker.mirrors..."]` entry or change it to a working proxy mirror.
+3. Save the file and explicitly restart the Docker service: `sudo systemctl restart docker`
+4. Run `docker compose up -d --build` again.
