@@ -4,12 +4,11 @@ const INITIAL = {
   node_id: '',
   cloud_uid: '',
   device_secret: '',
-  ok_channel: 0,
-  ng_channel: 1,
+  total_sensor: 1,
   is_active: true,
 };
 
-export default function DeviceModal({ device, onSave, onClose }) {
+export default function InspectorModal({ device, onSave, onClose }) {
   const isEdit = !!device?.id;
   const [form, setForm] = useState(INITIAL);
   const [errors, setErrors] = useState({});
@@ -21,8 +20,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
         node_id: device.node_id || '',
         cloud_uid: device.cloud_uid || '',
         device_secret: device.device_secret || '',
-        ok_channel: device.ok_channel ?? 0,
-        ng_channel: device.ng_channel ?? 1,
+        total_sensor: device.total_sensor ?? 1,
         is_active: device.is_active ?? true,
       });
     } else {
@@ -36,7 +34,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
     if (!form.node_id.trim()) errs.node_id = 'Node ID is required';
     if (!form.cloud_uid.trim()) errs.cloud_uid = 'Cloud UID is required';
     if (!form.device_secret.trim()) errs.device_secret = 'Device Secret is required';
-    if (form.ok_channel === form.ng_channel) errs.ng_channel = 'OK and NG channels must differ';
+    if (form.total_sensor < 1) errs.total_sensor = 'Must have at least 1 sensor';
     return errs;
   }
 
@@ -51,8 +49,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
     try {
       await onSave({
         ...form,
-        ok_channel: Number(form.ok_channel),
-        ng_channel: Number(form.ng_channel),
+        total_sensor: Number(form.total_sensor),
       });
     } catch {
       // Parent handles error
@@ -69,7 +66,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{isEdit ? '✏️ Edit Counting Node' : '➕ New Counting Node'}</h2>
+          <h2>{isEdit ? '✏️ Edit Inspection Node' : '➕ New Inspection Node'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -78,9 +75,9 @@ export default function DeviceModal({ device, onSave, onClose }) {
             <div className="form-group">
               <label className="form-label">Node ID</label>
               <input
-                id="input-node-id"
+                id="input-inspector-node-id"
                 className={`form-input ${errors.node_id ? 'error' : ''}`}
-                placeholder="e.g. C071"
+                placeholder="e.g. Q005"
                 value={form.node_id}
                 onChange={(e) => handleChange('node_id', e.target.value)}
               />
@@ -90,7 +87,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
             <div className="form-group">
               <label className="form-label">Cloud UID</label>
               <input
-                id="input-cloud-uid"
+                id="input-inspector-cloud-uid"
                 className={`form-input ${errors.cloud_uid ? 'error' : ''}`}
                 placeholder="e.g. dd880e00-xxxx-xxxx"
                 value={form.cloud_uid}
@@ -102,7 +99,7 @@ export default function DeviceModal({ device, onSave, onClose }) {
             <div className="form-group">
               <label className="form-label">Device Secret</label>
               <input
-                id="input-device-secret"
+                id="input-inspector-device-secret"
                 className={`form-input ${errors.device_secret ? 'error' : ''}`}
                 placeholder="HMAC authentication token"
                 value={form.device_secret}
@@ -111,28 +108,17 @@ export default function DeviceModal({ device, onSave, onClose }) {
               {errors.device_secret && <span className="form-error">{errors.device_secret}</span>}
             </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">OK Channel</label>
-                <input
-                  id="input-ok-channel"
-                  type="number"
-                  className="form-input"
-                  value={form.ok_channel}
-                  onChange={(e) => handleChange('ok_channel', e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">NG Channel</label>
-                <input
-                  id="input-ng-channel"
-                  type="number"
-                  className={`form-input ${errors.ng_channel ? 'error' : ''}`}
-                  value={form.ng_channel}
-                  onChange={(e) => handleChange('ng_channel', e.target.value)}
-                />
-                {errors.ng_channel && <span className="form-error">{errors.ng_channel}</span>}
-              </div>
+            <div className="form-group">
+              <label className="form-label">Total Sensors</label>
+              <input
+                id="input-inspector-total-sensor"
+                type="number"
+                min="1"
+                className={`form-input ${errors.total_sensor ? 'error' : ''}`}
+                value={form.total_sensor}
+                onChange={(e) => handleChange('total_sensor', e.target.value)}
+              />
+              {errors.total_sensor && <span className="form-error">{errors.total_sensor}</span>}
             </div>
 
             <div className="form-group">

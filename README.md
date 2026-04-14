@@ -1,1 +1,0 @@
-# iotech_essentials
