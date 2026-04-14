@@ -9,7 +9,7 @@ import threading
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
-db = DeviceDB()
+db = DeviceDB(init_tables=True)
 
 # Initialize WebSockets for real-time UI data
 socketio = SocketIO(app, cors_allowed_origins="*")

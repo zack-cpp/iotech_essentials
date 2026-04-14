@@ -4,14 +4,16 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 class DeviceDB:
-    def __init__(self):
+    def __init__(self, init_tables=False):
         self.host = os.getenv("DB_HOST")
         self.database = os.getenv("DB_NAME")
         self.user = os.getenv("DB_USER")
         self.password = os.getenv("DB_PASSWORD")
         self.port = os.getenv("DB_PORT")
         self.gateway_id = os.getenv("GATEWAY_ID")
-        self.initialize_tables()
+        
+        if init_tables:
+            self.initialize_tables()
 
     def initialize_tables(self):
         """Standardizes database migrations by ensuring all required schema tables natively exist on boot."""
