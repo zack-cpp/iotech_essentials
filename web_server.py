@@ -59,7 +59,16 @@ def mqtt_background_listener():
             listen_client.username_pw_set(MQTT_USER, MQTT_PASS)
         listen_client.on_connect = on_connect
         listen_client.on_message = on_message
-        listen_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        
+        import time
+        while True:
+            try:
+                listen_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+                break
+            except Exception as e:
+                print(f"[WEB_SERVER] MQTT Connection failed: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
+                
         listen_client.loop_forever()
     except Exception as e:
         print(f"[WEB_SERVER] Background MQTT Listener failed: {e}")

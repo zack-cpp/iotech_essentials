@@ -394,5 +394,12 @@ client.on_connect = on_connect
 client.on_disconnect = on_disconnect
 client.on_message = on_message
 
-client.connect(BROKER, PORT, keepalive=60)
+while True:
+    try:
+        client.connect(BROKER, PORT, keepalive=60)
+        break
+    except Exception as e:
+        print(f"[MQTT] Connection failed: {e}. Retrying in 5 seconds...")
+        time.sleep(5)
+
 client.loop_forever()
