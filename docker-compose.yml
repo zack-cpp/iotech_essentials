@@ -5,7 +5,7 @@ services:
     restart: always
     env_file: .env
     ports:
-      - "5433:5432"
+      - "${DB_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -30,7 +30,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -61,6 +61,7 @@ services:
       dockerfile: Dockerfile.udp
     container_name: udp-responder
     restart: always
+    # network_mode: "host"
     ports:
       - "${UDP_PORT}:${UDP_PORT}/udp"
     env_file: .env
@@ -69,6 +70,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.cli
+    environment:
+      - GATEWAY_API_URL=http://IoT-Essentials-backend:8000
+    depends_on:
+      - backend
+    profiles:
+      - cli
 
 volumes:
   postgres_data:
