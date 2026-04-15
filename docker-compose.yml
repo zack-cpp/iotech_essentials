@@ -28,7 +28,7 @@ services:
     env_file: .env
     environment:
       - DB_HOST=db
-      - DB_PORT=${DB_PORT}
+      - DB_PORT=5432
     ports:
       - "${BACKEND_PORT}:8000"
     depends_on:
