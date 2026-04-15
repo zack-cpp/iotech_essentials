@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import get_settings
 from database import SessionLocal, InspectionDevice
-from services.http_forwarder import send_count_data, send_heartbeat
+from services.http_forwarder import get_limiter
 
 settings = get_settings()
 
@@ -64,7 +64,8 @@ def heartbeat_loop():
         with devices_lock:
             current = list(devices)
         for d in current:
-            send_heartbeat(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
+            limiter = get_limiter(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
+            limiter.enqueue("heartbeat")
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -117,13 +118,12 @@ def on_message(client, userdata, msg):
         expected = list(range(1, target["total_sensor"] + 1))
         status = "OK" if sensor_ids == expected else "NG"
 
-        send_count_data(
+        limiter = get_limiter(
             device_uid=target["cloud_uid"],
             secret=target["device_secret"],
-            count=count,
-            status=status,
             base_url=settings.HTTP_TARGET_URL,
         )
+        limiter.enqueue("count", count=count, status=status)
 
     except Exception as e:
         print(f"[INSPECT] Error processing message: {e}")

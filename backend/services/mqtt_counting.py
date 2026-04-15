@@ -12,8 +12,6 @@ import time
 import threading
 import sys
 import os
-from collections import defaultdict
-import queue
 
 import paho.mqtt.client as mqtt
 
@@ -22,20 +20,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import get_settings
 from database import SessionLocal, CountingDevice
-from services.http_forwarder import send_count_data, send_heartbeat
+from services.http_forwarder import get_limiter
 
 settings = get_settings()
 
 # ===== Dynamic device mappings =====
 devices = []  # list of dicts from DB
 devices_lock = threading.Lock()
-
-# Rate-limiting per device
-last_send_time = defaultdict(float)
-send_lock = threading.Lock()
-device_queues = defaultdict(queue.Queue)
-queue_running = defaultdict(bool)
-queue_lock = threading.Lock()
 
 HEARTBEAT_INTERVAL = 10
 
@@ -81,56 +72,14 @@ def load_config(client=None):
             sys.exit(1)
 
 
-def _process_queue(cloud_uid, secret):
-    """Background queue processor enforcing 1s rate limit per device."""
-    while True:
-        try:
-            msg_data = device_queues[cloud_uid].get(timeout=5.0)
-        except queue.Empty:
-            with queue_lock:
-                queue_running[cloud_uid] = False
-            return
-
-        count, status = msg_data
-        while True:
-            now = time.time()
-            with send_lock:
-                elapsed = now - last_send_time[cloud_uid]
-                if elapsed >= 1.0:
-                    last_send_time[cloud_uid] = now
-                    break
-            time.sleep(max(0, 1.0 - elapsed))
-
-        send_count_data(cloud_uid, secret, count, status, settings.HTTP_TARGET_URL)
-
-
-def enqueue_send(cloud_uid, secret, count, status):
-    """Rate-limited send: immediate if possible, else queued."""
-    now = time.time()
-    with send_lock:
-        if now - last_send_time[cloud_uid] >= 1.0:
-            last_send_time[cloud_uid] = now
-            threading.Thread(
-                target=send_count_data,
-                args=(cloud_uid, secret, count, status, settings.HTTP_TARGET_URL),
-                daemon=True,
-            ).start()
-            return
-
-    device_queues[cloud_uid].put((count, status))
-    with queue_lock:
-        if not queue_running[cloud_uid]:
-            queue_running[cloud_uid] = True
-            threading.Thread(target=_process_queue, args=(cloud_uid, secret), daemon=True).start()
-
-
 def heartbeat_loop():
     """Periodic heartbeat for all active counting devices."""
     while True:
         with devices_lock:
             current = list(devices)
         for d in current:
-            send_heartbeat(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
+            limiter = get_limiter(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
+            limiter.enqueue("heartbeat")
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -182,7 +131,8 @@ def on_message(client, userdata, msg):
                         print(f"[COUNTING] Ignored channel {channel} for {d['node_id']}")
                         return
 
-                    enqueue_send(d["cloud_uid"], d["device_secret"], count, status)
+                    limiter = get_limiter(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
+                    limiter.enqueue("count", count=count, status=status)
                 except json.JSONDecodeError:
                     print(f"[COUNTING] Invalid JSON from {d['node_id']}")
                 return
