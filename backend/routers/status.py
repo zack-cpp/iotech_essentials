@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db, CountingDevice, InspectionDevice
 from schemas import GatewayStatus
 from config import get_settings
+from services.mqtt_logger import mqtt_logger
 
 router = APIRouter(prefix="/api/status", tags=["Gateway Status"])
 settings = get_settings()
@@ -26,3 +27,10 @@ def get_status(db: Session = Depends(get_db)):
         inspection_devices=inspection_count,
         uptime_seconds=round(time.time() - _start_time, 1),
     )
+
+
+@router.get("/logs")
+def get_logging_status():
+    """Returns the current state of MQTT logging."""
+    mqtt_logger.load_state()  # Ensure we have the latest from file
+    return mqtt_logger.enabled_devices

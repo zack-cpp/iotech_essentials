@@ -104,6 +104,7 @@ Control MQTT message logging per device. Logs are written to `backend/logs/dd-mm
 
 | Command | Usage | Description |
 | :--- | :--- | :--- |
+| `status` | `cli log status` | Show which devices have logging enabled/disabled. |
 | `enable` | `cli log enable [DEVICE_ID]` | Enable logging for a device (or `all`). |
 | `disable` | `cli log disable [DEVICE_ID]` | Disable logging for a device (or `all`). |
 

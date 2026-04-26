@@ -539,6 +539,30 @@ def log_disable(
     )
 
 
+@log_app.command("status")
+def log_status():
+    """Show which devices have logging enabled/disabled."""
+    data = api_request("GET", "/api/status/logs")
+
+    if _json_output:
+        print_json(data)
+        return
+
+    if not data:
+        console.print("[dim]No devices currently have logging state set (everything defaults to disabled).[/]")
+        return
+
+    table = Table(title="MQTT Logging Status", border_style="yellow")
+    table.add_column("Device ID", style="bold yellow")
+    table.add_column("Status", justify="center")
+
+    for device_id, enabled in data.items():
+        status_text = "[green]Enabled[/]" if enabled else "[red]Disabled[/]"
+        table.add_row(device_id, status_text)
+
+    console.print(table)
+
+
 # ─── Entrypoint ──────────────────────────────────────────────────
 
 if __name__ == "__main__":
