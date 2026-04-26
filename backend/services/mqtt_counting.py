@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_settings
 from database import SessionLocal, CountingDevice
 from services.http_forwarder import get_limiter
+from services.mqtt_logger import mqtt_logger
 
 settings = get_settings()
 
@@ -94,6 +95,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
                 client.subscribe(topic)
                 print(f"[COUNTING] Subscribed to {topic}")
         client.subscribe("system/gateway/reload_config")
+        client.subscribe("system/gateway/log_control")
     else:
         print(f"[COUNTING] MQTT connect failed rc={reason_code}")
 
@@ -113,11 +115,26 @@ def on_message(client, userdata, msg):
             load_config(client)
             return
 
+        # Log control signal
+        if topic == "system/gateway/log_control":
+            try:
+                data = json.loads(payload_str)
+                device_id = data.get("device_id")
+                action = data.get("action")
+                if action == "enable" and device_id:
+                    mqtt_logger.enable(device_id)
+                elif action == "disable" and device_id:
+                    mqtt_logger.disable(device_id)
+            except json.JSONDecodeError:
+                pass
+            return
+
         with devices_lock:
             current = list(devices)
 
         for d in current:
             if topic == f"{d['node_id']}/counting":
+                mqtt_logger.log(d['node_id'], topic, payload_str)
                 try:
                     data = json.loads(payload_str)
                     channel = data.get("channel")

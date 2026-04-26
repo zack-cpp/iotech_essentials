@@ -99,6 +99,35 @@ Manage quality control sensor nodes.
 
 ---
 
+### `log` Commands
+Control MQTT message logging per device. Logs are written to `backend/logs/dd-mm-yyyy.log`.
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `enable` | `cli log enable [DEVICE_ID]` | Enable logging for a device (or `all`). |
+| `disable` | `cli log disable [DEVICE_ID]` | Disable logging for a device (or `all`). |
+
+**Examples:**
+```bash
+# Enable logging for a specific node
+docker compose run --rm cli log enable NODE_01
+
+# Enable logging for all devices
+docker compose run --rm cli log enable all
+
+# Disable logging
+docker compose run --rm cli log disable NODE_01
+```
+
+**Notes:**
+- Logs are stored in `backend/logs/` inside the backend container, one file per day (`dd-mm-yyyy.log`).
+- Each line: `[timestamp] [device_id] [topic] payload`
+- For counting devices, the device ID is the `node_id`.
+- For inspection devices, the device ID is the `MESIN_ID` from the message payload.
+- Logging state is held in memory per worker process and resets on restart.
+
+---
+
 ## 💡 Pro Tips
 
 ### Interactive Prompts

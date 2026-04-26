@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_settings
 from database import SessionLocal, InspectionDevice
 from services.http_forwarder import get_limiter
+from services.mqtt_logger import mqtt_logger
 
 settings = get_settings()
 
@@ -78,6 +79,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
             client.subscribe(settings.INSPECT_MQTT_TOPIC)
             print(f"[INSPECT] Subscribed to {settings.INSPECT_MQTT_TOPIC}")
         client.subscribe("system/gateway/reload_config")
+        client.subscribe("system/gateway/log_control")
     else:
         print(f"[INSPECT] MQTT connect failed rc={reason_code}")
 
@@ -88,15 +90,35 @@ def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
 
 def on_message(client, userdata, msg):
     try:
+        topic = msg.topic
+        payload_str = msg.payload.decode("utf-8", errors="replace")
+
         # Hot-reload signal
-        if msg.topic == "system/gateway/reload_config":
+        if topic == "system/gateway/reload_config":
             print("[INSPECT] Hot-reload signal received!")
             load_config(client)
             return
 
-        payload = json.loads(msg.payload.decode())
+        # Log control signal
+        if topic == "system/gateway/log_control":
+            try:
+                data = json.loads(payload_str)
+                device_id = data.get("device_id")
+                action = data.get("action")
+                if action == "enable" and device_id:
+                    mqtt_logger.enable(device_id)
+                elif action == "disable" and device_id:
+                    mqtt_logger.disable(device_id)
+            except json.JSONDecodeError:
+                pass
+            return
+
+        payload = json.loads(payload_str)
 
         mesin_id = payload.get("MESIN_ID")
+        if mesin_id:
+            mqtt_logger.log(mesin_id, topic, payload_str)
+
         sensor_ids = list(map(int, payload.get("SENSOR_ID", [])))
         count = 1
 

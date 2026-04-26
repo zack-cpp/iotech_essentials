@@ -17,11 +17,13 @@ Examples:
     python gateway_cli.py counting delete 3
 """
 
+import os
 import sys
 import json as json_lib
 from typing import Optional
 
 import requests
+import paho.mqtt.client as paho_mqtt
 import typer
 from rich import print as rprint
 from rich.console import Console
@@ -52,8 +54,16 @@ inspection_app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+log_app = typer.Typer(
+    name="log",
+    help="Control [bold yellow]MQTT message logging[/bold yellow] per device",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
 app.add_typer(counting_app, name="counting")
 app.add_typer(inspection_app, name="inspection")
+app.add_typer(log_app, name="log")
 
 console = Console(force_terminal=True)
 
@@ -467,6 +477,66 @@ def _print_device_detail(device: dict, device_type: str):
         padding=(1, 2),
     )
     console.print(panel)
+
+
+# ─── MQTT Logger Commands ────────────────────────────────────────
+
+def _mqtt_publish_log_control(device_id: str, action: str):
+    """Publish a log control message to the MQTT broker."""
+    broker = os.environ.get("MQTT_BROKER_HOST", "localhost").strip('"')
+    port = int(os.environ.get("MQTT_BROKER_PORT", "1883").strip('"'))
+    username = os.environ.get("MQTT_USERNAME", "").strip('"')
+    password = os.environ.get("MQTT_PASSWORD", "").strip('"')
+
+    try:
+        client = paho_mqtt.Client(callback_api_version=paho_mqtt.CallbackAPIVersion.VERSION2)
+        if username and password:
+            client.username_pw_set(username, password)
+        client.connect(broker, port, keepalive=5)
+
+        payload = json_lib.dumps({"device_id": device_id, "action": action})
+        result = client.publish("system/gateway/log_control", payload)
+        result.wait_for_publish(timeout=5)
+        client.disconnect()
+        return True
+    except Exception as e:
+        console.print(f"[bold red]X[/] MQTT publish failed: {e}")
+        console.print(f"  Broker: [cyan]{broker}:{port}[/]")
+        raise typer.Exit(1)
+
+
+@log_app.command("enable")
+def log_enable(
+    device_id: str = typer.Argument(..., help="Device / Node ID to enable logging for, or 'all'"),
+):
+    """Enable MQTT message logging for a device."""
+    _mqtt_publish_log_control(device_id, "enable")
+
+    if _json_output:
+        print_json({"action": "enable", "device_id": device_id})
+        return
+
+    console.print(
+        f"[bold green]OK[/] Logging [green]enabled[/] for "
+        f"[bold yellow]{device_id}[/]"
+    )
+
+
+@log_app.command("disable")
+def log_disable(
+    device_id: str = typer.Argument(..., help="Device / Node ID to disable logging for, or 'all'"),
+):
+    """Disable MQTT message logging for a device."""
+    _mqtt_publish_log_control(device_id, "disable")
+
+    if _json_output:
+        print_json({"action": "disable", "device_id": device_id})
+        return
+
+    console.print(
+        f"[bold green]OK[/] Logging [red]disabled[/] for "
+        f"[bold yellow]{device_id}[/]"
+    )
 
 
 # ─── Entrypoint ──────────────────────────────────────────────────

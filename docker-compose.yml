@@ -75,8 +75,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cli
+    env_file: .env
     environment:
       - GATEWAY_API_URL=http://IoT-Essentials-backend:8000
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
     depends_on:
       - backend
     profiles:
