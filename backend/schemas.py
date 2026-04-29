@@ -68,3 +68,39 @@ class GatewayStatus(BaseModel):
     counting_devices: int = 0
     inspection_devices: int = 0
     uptime_seconds: float = 0
+
+
+# ==================== Sensor Fusion Rules ====================
+
+class SensorFusionRuleBase(BaseModel):
+    source_node_id: str = Field(..., min_length=1, max_length=50)
+    source_channel: int = Field(..., ge=1, le=4)
+    source_field: str = Field(default="voltage", min_length=1, max_length=50)
+    formula: str = Field(..., min_length=1, max_length=500)
+    destination_node_id: str = Field(..., min_length=1, max_length=50)
+    destination_channel: int = Field(..., ge=1, le=4)
+    is_active: bool = True
+
+
+class SensorFusionRuleCreate(SensorFusionRuleBase):
+    gateway_id: Optional[str] = None
+
+
+class SensorFusionRuleUpdate(SensorFusionRuleBase):
+    gateway_id: Optional[str] = None
+
+
+class SensorFusionRuleResponse(SensorFusionRuleBase):
+    id: int
+    gateway_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SensorFusionValidateRequest(BaseModel):
+    formula: str
+    source_field: str = "voltage"
+    dummy_value: float = 1.0

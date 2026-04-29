@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import CountingNodes from './pages/CountingNodes';
 import InspectionNodes from './pages/InspectionNodes';
+import SensorFusion from './pages/SensorFusion';
 import { fetchStatus } from './api';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/counting" element={<CountingNodes />} />
           <Route path="/inspection" element={<InspectionNodes />} />
+          <Route path="/fusion" element={<SensorFusion />} />
         </Routes>
       </Layout>
     </BrowserRouter>

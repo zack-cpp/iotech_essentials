@@ -9,6 +9,7 @@ export default function Layout({ children, gatewayId }) {
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/counting', label: 'Counting Nodes', icon: '🔢' },
     { path: '/inspection', label: 'Inspection Nodes', icon: '🔬' },
+    { path: '/fusion', label: 'Sensor Fusion', icon: '🔗' },
   ];
 
   return (

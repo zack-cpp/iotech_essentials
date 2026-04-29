@@ -58,3 +58,25 @@ export function deleteInspector(id) {
 export function fetchStatus() {
   return request('/status');
 }
+
+// =============== Sensor Fusion ===============
+
+export function fetchFusionRules() {
+  return request('/fusion-rules');
+}
+
+export function createFusionRule(data) {
+  return request('/fusion-rules', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateFusionRule(id, data) {
+  return request(`/fusion-rules/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export function deleteFusionRule(id) {
+  return request(`/fusion-rules/${id}`, { method: 'DELETE' });
+}
+
+export function validateFusionFormula(data) {
+  return request('/fusion-rules/validate', { method: 'POST', body: JSON.stringify(data) });
+}

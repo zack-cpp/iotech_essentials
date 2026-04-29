@@ -19,7 +19,7 @@ import paho.mqtt.client as mqtt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import get_settings
-from database import SessionLocal, CountingDevice
+from database import SessionLocal, CountingDevice, SensorFusionRule
 from services.http_forwarder import get_limiter
 from services.mqtt_logger import mqtt_logger
 
@@ -27,7 +27,16 @@ settings = get_settings()
 
 # ===== Dynamic device mappings =====
 devices = []  # list of dicts from DB
+fusion_rules = [] # list of fusion rules
 devices_lock = threading.Lock()
+
+import simpleeval
+import math
+
+def create_evaluator():
+    s = simpleeval.SimpleEval()
+    s.functions.update(math.__dict__)
+    return s
 
 HEARTBEAT_INTERVAL = 10
 
@@ -59,14 +68,35 @@ def load_config(client=None):
                     "ng_channel": row.ng_channel,
                 })
 
+            f_rows = db.query(SensorFusionRule).filter(
+                SensorFusionRule.gateway_id == settings.GATEWAY_ID,
+                SensorFusionRule.is_active == True,
+            ).all()
+
+            fusion_rules.clear()
+            for r in f_rows:
+                fusion_rules.append({
+                    "id": r.id,
+                    "source_node_id": r.source_node_id,
+                    "source_channel": r.source_channel,
+                    "source_field": r.source_field,
+                    "formula": r.formula.replace("<source_1>", "source_1"),
+                    "destination_node_id": r.destination_node_id,
+                    "destination_channel": r.destination_channel,
+                })
+
             # Subscribe to new topics
             if client and client.is_connected():
                 for d in devices:
                     topic = f"{d['node_id']}/counting"
                     client.subscribe(topic)
                     print(f"[COUNTING] Subscribed to {topic}")
+                for f in fusion_rules:
+                    topic = f"{f['source_node_id']}/counting"
+                    client.subscribe(topic)
+                    print(f"[COUNTING] Subscribed to {topic} (Fusion)")
 
-        print(f"[COUNTING] Loaded {len(devices)} device mappings.")
+        print(f"[COUNTING] Loaded {len(devices)} device mappings and {len(fusion_rules)} fusion rules.")
     except Exception as e:
         print(f"[COUNTING] CRITICAL — failed to load config: {e}")
         if client is None:
@@ -94,6 +124,10 @@ def on_connect(client, userdata, flags, reason_code, properties):
                 topic = f"{d['node_id']}/counting"
                 client.subscribe(topic)
                 print(f"[COUNTING] Subscribed to {topic}")
+            for f in fusion_rules:
+                topic = f"{f['source_node_id']}/counting"
+                client.subscribe(topic)
+                print(f"[COUNTING] Subscribed to {topic} (Fusion)")
         client.subscribe("system/gateway/reload_config")
         client.subscribe("system/gateway/log_control")
     else:
@@ -131,12 +165,41 @@ def on_message(client, userdata, msg):
 
         with devices_lock:
             current = list(devices)
+            current_fusion = list(fusion_rules)
+
+        try:
+            data = json.loads(payload_str)
+            channel = data.get("channel")
+            
+            # --- Fusion Rules Processing ---
+            for f in current_fusion:
+                if topic == f"{f['source_node_id']}/counting" and channel == f['source_channel']:
+                    source_val = data.get(f['source_field'])
+                    if source_val is not None:
+                        try:
+                            evaluator = create_evaluator()
+                            evaluator.names = {"source_1": float(source_val)}
+                            result = evaluator.eval(f['formula'])
+                            
+                            dest_device = next((d for d in current if d["node_id"] == f["destination_node_id"]), None)
+                            if dest_device:
+                                limiter = get_limiter(dest_device["cloud_uid"], dest_device["device_secret"], settings.HTTP_TARGET_URL)
+                                limiter.enqueue("monitoring", channel=f["destination_channel"], value=result)
+                                print(f"[FUSION] Evaluated rule {f['id']}: {result} -> Monitoring API ({dest_device['node_id']})")
+                            else:
+                                print(f"[FUSION] Error: Destination node {f['destination_node_id']} not found.")
+                        except Exception as e:
+                            print(f"[FUSION] Error evaluating rule {f['id']}: {e}")
+        except json.JSONDecodeError:
+            data = None
 
         for d in current:
             if topic == f"{d['node_id']}/counting":
                 mqtt_logger.log(d['node_id'], topic, payload_str)
+                if not data:
+                    print(f"[COUNTING] Invalid JSON from {d['node_id']}")
+                    return
                 try:
-                    data = json.loads(payload_str)
                     channel = data.get("channel")
                     count = data.get("count", 1)
 
@@ -150,8 +213,8 @@ def on_message(client, userdata, msg):
 
                     limiter = get_limiter(d["cloud_uid"], d["device_secret"], settings.HTTP_TARGET_URL)
                     limiter.enqueue("count", count=count, status=status)
-                except json.JSONDecodeError:
-                    print(f"[COUNTING] Invalid JSON from {d['node_id']}")
+                except Exception as e:
+                    print(f"[COUNTING] Error handling payload from {d['node_id']}: {e}")
                 return
 
     except Exception as e:

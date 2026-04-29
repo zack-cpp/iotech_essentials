@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from routers import devices, inspectors, status
+from routers import devices, inspectors, status, fusion
 
 
 @asynccontextmanager
@@ -56,6 +56,7 @@ app.add_middleware(
 app.include_router(devices.router)
 app.include_router(inspectors.router)
 app.include_router(status.router)
+app.include_router(fusion.router)
 
 
 @app.get("/api/health")

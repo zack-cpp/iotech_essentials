@@ -40,6 +40,22 @@ class InspectionDevice(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class SensorFusionRule(Base):
+    __tablename__ = "sensor_fusion_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gateway_id = Column(String(50), nullable=False)
+    source_node_id = Column(String(50), nullable=False)
+    source_channel = Column(Integer, nullable=False)
+    source_field = Column(String(50), nullable=False, default="voltage")
+    formula = Column(String(500), nullable=False)
+    destination_node_id = Column(String(50), nullable=False)
+    destination_channel = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 def get_db():
     """FastAPI dependency that yields a database session."""
     db = SessionLocal()

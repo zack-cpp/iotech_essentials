@@ -103,6 +103,60 @@ def send_count_data(device_uid: str, secret: str, count: int, status: str, base_
     return False
 
 
+def send_monitoring_data(device_uid: str, secret: str, channel: int, value: float, base_url: str):
+    """Sign and POST monitoring data to the cloud API."""
+    timestamp = int(time.time())
+    payload = {
+        "data": [
+            {
+                "channel_number": channel,
+                "value": value,
+                "timestamp": timestamp
+            }
+        ]
+    }
+    body_bytes = json.dumps(payload).encode("utf-8")
+    timestamp_str = str(timestamp)
+
+    try:
+        message = timestamp_str.encode("utf-8") + body_bytes
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            message,
+            hashlib.sha256
+        ).hexdigest()
+    except Exception as e:
+        print(f"[HTTP] Sign error: {e}")
+        return False
+
+    headers = {
+        "X-Device-Uid": device_uid,
+        "X-Timestamp": timestamp_str,
+        "X-Signature": signature,
+        "Content-Type": "application/json",
+    }
+
+    full_url = f"{base_url}/api/monitoring/ingest"
+    session = _get_session()
+
+    for attempt in range(1, MAX_429_RETRIES + 1):
+        try:
+            res = session.post(full_url, data=body_bytes, headers=headers, timeout=10)
+            if res.status_code == 429:
+                print(f"[HTTP] {device_uid} monitoring -> 429 (attempt {attempt}/{MAX_429_RETRIES})")
+                if attempt < MAX_429_RETRIES:
+                    time.sleep(RETRY_429_DELAY * attempt)
+                    continue
+                return False
+            print(f"[HTTP] {device_uid} monitoring -> {res.status_code}")
+            return res.status_code == 200
+        except requests.exceptions.RequestException as e:
+            print(f"[HTTP] POST error: {e}")
+            return False
+
+    return False
+
+
 def send_heartbeat(device_uid: str, secret: str, base_url: str):
     """Sign and POST a heartbeat to the cloud API."""
     timestamp = int(time.time())
@@ -197,6 +251,14 @@ class DeviceRateLimiter:
                     self.secret,
                     kwargs["count"],
                     kwargs["status"],
+                    self.base_url,
+                )
+            elif msg_type == "monitoring":
+                send_monitoring_data(
+                    self.device_uid,
+                    self.secret,
+                    kwargs["channel"],
+                    kwargs["value"],
                     self.base_url,
                 )
             elif msg_type == "heartbeat":

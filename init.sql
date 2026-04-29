@@ -27,6 +27,20 @@ CREATE TABLE IF NOT EXISTS inspection_devices (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS sensor_fusion_rules (
+    id SERIAL PRIMARY KEY,
+    gateway_id VARCHAR(50) NOT NULL,
+    source_node_id VARCHAR(50) NOT NULL,
+    source_channel INT NOT NULL,
+    source_field VARCHAR(50) NOT NULL DEFAULT 'voltage',
+    formula VARCHAR(500) NOT NULL,
+    destination_node_id VARCHAR(50) NOT NULL,
+    destination_channel INT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Seed: Example counting device
 INSERT INTO counting_devices (gateway_id, node_id, cloud_uid, device_secret, ok_channel, ng_channel)
 VALUES ('GATEWAY_01', 'C071', 'dd880e00-example-uid', 'N0Tlslo-example-secret', 0, 1);
