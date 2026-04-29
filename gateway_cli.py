@@ -61,9 +61,17 @@ log_app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+fusion_app = typer.Typer(
+    name="fusion",
+    help="Manage [bold green]sensor fusion[/bold green] rules",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+
 app.add_typer(counting_app, name="counting")
 app.add_typer(inspection_app, name="inspection")
 app.add_typer(log_app, name="log")
+app.add_typer(fusion_app, name="fusion")
 
 console = Console(force_terminal=True)
 
@@ -561,6 +569,189 @@ def log_status():
         table.add_row(device_id, status_text)
 
     console.print(table)
+
+
+# ─── Fusion Rules Commands ──────────────────────────────────────
+
+@fusion_app.command("list")
+def fusion_list():
+    """List all fusion rules."""
+    rules = api_request("GET", "/api/fusion-rules")
+
+    if _json_output:
+        print_json(rules)
+        return
+
+    if not rules:
+        console.print("[dim]No fusion rules configured.[/]")
+        return
+
+    table = Table(title="Sensor Fusion Rules", border_style="green")
+    table.add_column("ID", style="dim", width=5)
+    table.add_column("Source", style="bold cyan")
+    table.add_column("Formula")
+    table.add_column("Destination", style="bold magenta")
+    table.add_column("Active", justify="center")
+
+    for r in rules:
+        active = "[green]Yes[/]" if r["is_active"] else "[red]No[/]"
+        source = f"{r['source_node_id']} Ch:{r['source_channel']} ({r['source_field']})"
+        dest = f"{r['destination_node_id']} Ch:{r['destination_channel']}"
+        formula = r["formula"] if len(r["formula"]) <= 30 else r["formula"][:27] + "..."
+        table.add_row(str(r["id"]), source, formula, dest, active)
+
+    console.print(table)
+
+
+@fusion_app.command("test")
+def fusion_test(rule_id: int = typer.Argument(..., help="Fusion Rule ID to test")):
+    """Test a fusion rule end-to-end by listening for 1 MQTT payload."""
+    import time
+    import hmac
+    import hashlib
+    import threading
+    import simpleeval
+    import math
+
+    # 1. Fetch Rule
+    console.print(f"[bold cyan][1/4] Fetching Rule {rule_id}...[/]")
+    rule = api_request("GET", f"/api/fusion-rules/{rule_id}")
+    console.print(f"     Source Node: {rule['source_node_id']} (Ch: {rule['source_channel']})")
+    console.print(f"     Formula:     {rule['formula']}")
+    console.print(f"     Destination: {rule['destination_node_id']} (Ch: {rule['destination_channel']})")
+
+    # 2. Fetch Destination Device
+    console.print(f"[bold cyan][2/4] Fetching Destination Device Info...[/]")
+    devices = api_request("GET", "/api/devices")
+    dest_device = next((d for d in devices if d["node_id"] == rule["destination_node_id"]), None)
+    if not dest_device:
+        console.print(f"[bold red]X[/] Destination node {rule['destination_node_id']} not found in counting devices.")
+        raise typer.Exit(1)
+    
+    console.print(f"     Cloud UID:     {dest_device['cloud_uid']}")
+    console.print(f"     Device Secret: {'*' * 8}{dest_device['device_secret'][-4:]}")
+
+    # 3. Wait for MQTT Message
+    console.print(f"\\n[bold cyan][3/4] Waiting for MQTT Message from Source...[/]")
+    
+    broker = os.environ.get("MQTT_BROKER_HOST", "localhost").strip('"')
+    port = int(os.environ.get("MQTT_BROKER_PORT", "1883").strip('"'))
+    username = os.environ.get("MQTT_USERNAME", "").strip('"')
+    password = os.environ.get("MQTT_PASSWORD", "").strip('"')
+
+    source_topic = f"{rule['source_node_id']}/counting"
+    
+    event = threading.Event()
+    test_result = {}
+
+    def on_connect(client, userdata, flags, reason_code, properties):
+        if reason_code == 0:
+            client.subscribe(source_topic)
+            console.print(f"     Connected to broker {broker}:{port}, listening to {source_topic}")
+        else:
+            console.print(f"[bold red]X[/] Failed to connect, return code {reason_code}")
+            event.set()
+
+    def on_message(client, userdata, msg):
+        payload_str = msg.payload.decode('utf-8', errors='replace')
+        try:
+            data = json_lib.loads(payload_str)
+            if data.get("channel") == rule["source_channel"]:
+                source_val = data.get(rule["source_field"])
+                if source_val is not None:
+                    console.print(f"     [green]Received Matching Payload:[/] {payload_str}")
+                    console.print(f"     Extracted '{rule['source_field']}': {source_val}")
+                    
+                    # Evaluate Formula
+                    try:
+                        s = simpleeval.SimpleEval()
+                        s.functions.update(math.__dict__)
+                        s.names = {"source_1": float(source_val)}
+                        evaluated = s.eval(rule["formula"].replace("<source_1>", "source_1"))
+                        console.print(f"     [green]Formula Result:[/] {evaluated}")
+                        
+                        test_result["value"] = evaluated
+                        client.disconnect()
+                        event.set()
+                    except Exception as e:
+                        console.print(f"[bold red]X[/] Formula evaluation failed: {e}")
+                        client.disconnect()
+                        event.set()
+        except json_lib.JSONDecodeError:
+            pass
+
+    client = paho_mqtt.Client(callback_api_version=paho_mqtt.CallbackAPIVersion.VERSION2)
+    if username and password:
+        client.username_pw_set(username, password)
+        
+    client.on_connect = on_connect
+    client.on_message = on_message
+    
+    try:
+        client.connect(broker, port, keepalive=60)
+        client.loop_start()
+        
+        # Wait up to 60 seconds
+        if not event.wait(60):
+            console.print(f"[bold yellow]![/] Timed out waiting for message.")
+            client.disconnect()
+            raise typer.Exit(1)
+            
+    except Exception as e:
+        console.print(f"[bold red]X[/] MQTT error: {e}")
+        raise typer.Exit(1)
+
+    if "value" not in test_result:
+        raise typer.Exit(1)
+        
+    # 4. Send to Server
+    console.print(f"\\n[bold cyan][4/4] Sending Monitoring Data to Server...[/]")
+    
+    base_url = os.environ.get("HTTP_TARGET_URL", "https://app.chainstrument.com")
+    device_uid = dest_device['cloud_uid']
+    secret = dest_device['device_secret']
+    
+    timestamp = int(time.time())
+    payload = {
+        "data": [
+            {
+                "channel_number": rule['destination_channel'],
+                "value": test_result["value"],
+                "timestamp": timestamp
+            }
+        ]
+    }
+    body_bytes = json_lib.dumps(payload).encode("utf-8")
+    timestamp_str = str(timestamp)
+    
+    message = timestamp_str.encode("utf-8") + body_bytes
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        message,
+        hashlib.sha256
+    ).hexdigest()
+    
+    headers = {
+        "X-Device-Uid": device_uid,
+        "X-Timestamp": timestamp_str,
+        "X-Signature": signature,
+        "Content-Type": "application/json",
+    }
+    
+    url = f"{base_url}/api/monitoring/ingest"
+    console.print(f"     POST {url}")
+    console.print(f"     Headers: X-Device-Uid: {device_uid}, X-Signature: {signature}")
+    console.print(f"     Body: {json_lib.dumps(payload)}")
+    
+    try:
+        res = requests.post(url, data=body_bytes, headers=headers, timeout=10)
+        console.print(f"     [bold]Return Code:[/] {res.status_code}")
+        if res.status_code == 200:
+            console.print(f"     [bold green]Success![/] Server response: {res.text}")
+        else:
+            console.print(f"     [bold red]Failed![/] Server response: {res.text}")
+    except Exception as e:
+        console.print(f"     [bold red]HTTP Request Error:[/] {e}")
 
 
 # ─── Entrypoint ──────────────────────────────────────────────────
