@@ -99,6 +99,23 @@ Manage quality control sensor nodes.
 
 ---
 
+### `fusion` Commands
+Manage sensor fusion rules for data transformation and routing.
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `list` | `cli fusion list` | Shows all sensor fusion rules in a table. |
+| `get` | `cli fusion get [ID]` | Shows detailed info and full formula for a specific rule. |
+| `add` | `cli fusion add [FLAGS]` | Creates a new fusion rule (interactive if flags missing). |
+| `update` | `cli fusion update [ID] [FLAGS]` | Updates specified fields. |
+| `delete` | `cli fusion delete [ID]` | Deletes a fusion rule. |
+| `test` | `cli fusion test [ID]` | Performs an end-to-end local test of the rule. |
+
+**Add Rule Flags:**
+`--source-node`, `--source-channel`, `--source-field`, `--formula`, `--dest-node`, `--dest-channel`, `--active/--inactive`
+
+---
+
 ### `log` Commands
 Control MQTT message logging per device. Logs are written to `backend/logs/dd-mm-yyyy.log`.
 

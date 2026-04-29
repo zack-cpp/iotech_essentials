@@ -603,6 +603,131 @@ def fusion_list():
     console.print(table)
 
 
+@fusion_app.command("get")
+def fusion_get(rule_id: int = typer.Argument(..., help="Fusion Rule ID to retrieve")):
+    """Get a single fusion rule and see its full formula."""
+    rule = api_request("GET", f"/api/fusion-rules/{rule_id}")
+
+    if _json_output:
+        print_json(rule)
+        return
+
+    active = "[green]Active[/]" if rule["is_active"] else "[red]Inactive[/]"
+
+    lines = [
+        f"  [bold]Source Node[/]        [cyan]{rule['source_node_id']}[/cyan]",
+        f"  [bold]Source Channel[/]     {rule['source_channel']}",
+        f"  [bold]Source Field[/]       {rule['source_field']}",
+        f"  [bold]Destination Node[/]   [magenta]{rule['destination_node_id']}[/magenta]",
+        f"  [bold]Destination Ch.[/]    {rule['destination_channel']}",
+        f"  [bold]Status[/]             {active}",
+        f"\n  [bold]Formula:[/]\n    [yellow]{rule['formula']}[/yellow]"
+    ]
+
+    panel = Panel(
+        "\n".join(lines),
+        title=f"[bold green]Sensor Fusion Rule #{rule['id']}[/]",
+        border_style="green",
+        padding=(1, 2),
+    )
+    console.print(panel)
+
+
+@fusion_app.command("add")
+def fusion_add(
+    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID"),
+    source_channel: int = typer.Option(1, "--source-channel", "-sc", help="Source Channel"),
+    source_field: str = typer.Option("voltage", "--source-field", "-sf", help="Source Field (e.g. voltage)"),
+    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Mathematical formula"),
+    dest_node: Optional[str] = typer.Option(None, "--dest-node", "-dn", help="Destination Node ID"),
+    dest_channel: int = typer.Option(1, "--dest-channel", "-dc", help="Destination Channel"),
+    active: bool = typer.Option(True, "--active/--inactive", help="Rule active state"),
+):
+    """Add a new sensor fusion rule. Prompts interactively if args are omitted."""
+    if not source_node:
+        source_node = typer.prompt("Source Node ID", type=str)
+    if not formula:
+        formula = typer.prompt("Formula", type=str)
+    if not dest_node:
+        dest_node = typer.prompt("Destination Node ID", type=str)
+
+    payload = {
+        "source_node_id": source_node,
+        "source_channel": source_channel,
+        "source_field": source_field,
+        "formula": formula,
+        "destination_node_id": dest_node,
+        "destination_channel": dest_channel,
+        "is_active": active,
+    }
+
+    result = api_request("POST", "/api/fusion-rules", data=payload)
+
+    if _json_output:
+        print_json(result)
+        return
+
+    console.print(f"[bold green]OK[/] Created fusion rule (id={result['id']})")
+
+
+@fusion_app.command("update")
+def fusion_update(
+    rule_id: int = typer.Argument(..., help="Fusion Rule ID to update"),
+    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID"),
+    source_channel: Optional[int] = typer.Option(None, "--source-channel", "-sc", help="Source Channel"),
+    source_field: Optional[str] = typer.Option(None, "--source-field", "-sf", help="Source Field"),
+    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Formula"),
+    dest_node: Optional[str] = typer.Option(None, "--dest-node", "-dn", help="Destination Node ID"),
+    dest_channel: Optional[int] = typer.Option(None, "--dest-channel", "-dc", help="Destination Channel"),
+    active: Optional[bool] = typer.Option(None, "--active/--inactive", help="Set active state"),
+):
+    """Update a sensor fusion rule."""
+    current = api_request("GET", f"/api/fusion-rules/{rule_id}")
+
+    payload = {
+        "source_node_id": source_node if source_node is not None else current["source_node_id"],
+        "source_channel": source_channel if source_channel is not None else current["source_channel"],
+        "source_field": source_field if source_field is not None else current["source_field"],
+        "formula": formula if formula is not None else current["formula"],
+        "destination_node_id": dest_node if dest_node is not None else current["destination_node_id"],
+        "destination_channel": dest_channel if dest_channel is not None else current["destination_channel"],
+        "is_active": active if active is not None else current["is_active"],
+    }
+
+    result = api_request("PUT", f"/api/fusion-rules/{rule_id}", data=payload)
+
+    if _json_output:
+        print_json(result)
+        return
+
+    console.print(f"[bold green]OK[/] Updated fusion rule (id={result['id']})")
+
+
+@fusion_app.command("delete")
+def fusion_delete(
+    rule_id: int = typer.Argument(..., help="Fusion Rule ID to delete"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Delete a sensor fusion rule."""
+    if not force:
+        rule = api_request("GET", f"/api/fusion-rules/{rule_id}")
+        confirm = typer.confirm(
+            f"Delete fusion rule {rule_id} ({rule['source_node_id']} -> {rule['destination_node_id']})?",
+            default=False,
+        )
+        if not confirm:
+            console.print("[dim]Cancelled.[/]")
+            raise typer.Exit(0)
+
+    api_request("DELETE", f"/api/fusion-rules/{rule_id}")
+
+    if _json_output:
+        print_json({"message": "Deleted", "id": rule_id})
+        return
+
+    console.print(f"[bold green]OK[/] Deleted fusion rule (id={rule_id})")
+
+
 @fusion_app.command("test")
 def fusion_test(rule_id: int = typer.Argument(..., help="Fusion Rule ID to test")):
     """Test a fusion rule end-to-end by listening for 1 MQTT payload."""
