@@ -3,11 +3,11 @@ import { validateFusionFormula, fetchDevices } from '../api';
 
 const INITIAL = {
   source_node_id: '',
-  source_channel: 1,
+  source_channel: 0,
   source_field: 'voltage',
   formula: '',
   destination_node_id: '',
-  destination_channel: 1,
+  destination_channel: 0,
   is_active: true,
 };
 
@@ -25,11 +25,11 @@ export default function FusionModal({ rule, onSave, onClose }) {
     if (rule) {
       setForm({
         source_node_id: rule.source_node_id || '',
-        source_channel: rule.source_channel || 1,
+        source_channel: rule.source_channel ?? 0,
         source_field: rule.source_field || 'voltage',
         formula: rule.formula || '',
         destination_node_id: rule.destination_node_id || '',
-        destination_channel: rule.destination_channel || 1,
+        destination_channel: rule.destination_channel ?? 0,
         is_active: rule.is_active ?? true,
       });
     } else {
@@ -119,10 +119,10 @@ export default function FusionModal({ rule, onSave, onClose }) {
                   {errors.source_node_id && <span className="form-error">{errors.source_node_id}</span>}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Channel (1-4)</label>
+                  <label className="form-label">Channel (0+)</label>
                   <input
                     type="number"
-                    min="1" max="4"
+                    min="0"
                     className="form-input"
                     value={form.source_channel}
                     onChange={(e) => handleChange('source_channel', e.target.value)}
@@ -189,10 +189,10 @@ export default function FusionModal({ rule, onSave, onClose }) {
                   {errors.destination_node_id && <span className="form-error">{errors.destination_node_id}</span>}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Channel (1-4)</label>
+                  <label className="form-label">Channel (0+)</label>
                   <input
                     type="number"
-                    min="1" max="4"
+                    min="0"
                     className="form-input"
                     value={form.destination_channel}
                     onChange={(e) => handleChange('destination_channel', e.target.value)}

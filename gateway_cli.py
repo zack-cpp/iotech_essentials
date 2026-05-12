@@ -635,21 +635,55 @@ def fusion_get(rule_id: int = typer.Argument(..., help="Fusion Rule ID to retrie
 
 @fusion_app.command("add")
 def fusion_add(
-    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID"),
-    source_channel: int = typer.Option(1, "--source-channel", "-sc", help="Source Channel"),
-    source_field: str = typer.Option("voltage", "--source-field", "-sf", help="Source Field (e.g. voltage)"),
-    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Mathematical formula"),
-    dest_node: Optional[str] = typer.Option(None, "--dest-node", "-dn", help="Destination Node ID"),
-    dest_channel: int = typer.Option(1, "--dest-channel", "-dc", help="Destination Channel"),
+    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID (e.g. C071). Must match a registered counting device."),
+    source_channel: Optional[int] = typer.Option(None, "--source-channel", "-sc", help="Source channel number (0+). The MQTT channel field to read from."),
+    source_field: Optional[str] = typer.Option(None, "--source-field", "-sf", help="JSON field name in MQTT payload to extract (e.g. voltage, current, power)."),
+    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Math formula using <source_1> as variable. Supports: +, -, *, /, log(), sqrt(), pow(), abs()."),
+    dest_node: Optional[str] = typer.Option(None, "--dest-node", "-dn", help="Destination Node ID. The counting device to send the computed result to."),
+    dest_channel: Optional[int] = typer.Option(None, "--dest-channel", "-dc", help="Destination channel number (0+). The channel slot for the computed value."),
     active: bool = typer.Option(True, "--active/--inactive", help="Rule active state"),
 ):
-    """Add a new sensor fusion rule. Prompts interactively if args are omitted."""
+    """Add a new sensor fusion rule.
+
+    Transforms raw sensor data using a mathematical formula and routes the
+    result to a destination device's cloud endpoint.
+
+    All parameters are prompted interactively if not provided via flags.
+    """
+    # Show help panel in interactive mode
+    needs_interactive = not all([source_node, formula, dest_node])
+    if needs_interactive or source_channel is None or source_field is None or dest_channel is None:
+        help_lines = [
+            "[bold]Parameter Guide:[/]\n",
+            "  [cyan]Source Node ID[/]      Registered device node_id (e.g. [yellow]C071[/])",
+            "  [cyan]Source Channel[/]      MQTT payload channel number, integer >= 0 (e.g. [yellow]0[/])",
+            "  [cyan]Source Field[/]        JSON key in MQTT message to extract (e.g. [yellow]voltage[/], [yellow]current[/], [yellow]power[/])",
+            "  [cyan]Formula[/]            Math expression using [yellow]<source_1>[/] as variable",
+            "                     Operators: [yellow]+  -  *  /  **[/]",
+            "                     Functions: [yellow]log()  sqrt()  pow()  abs()  sin()  cos()[/]",
+            "                     Example:   [yellow]1.2762 * log(<source_1>)[/]",
+            "  [cyan]Destination Node[/]   Target device node_id to send result to (e.g. [yellow]C071[/])",
+            "  [cyan]Destination Channel[/] Channel slot for computed value, integer >= 0 (e.g. [yellow]2[/])",
+        ]
+        console.print(Panel(
+            "\n".join(help_lines),
+            title="[bold green]🔗 New Fusion Rule[/]",
+            border_style="green",
+            padding=(1, 2),
+        ))
+
     if not source_node:
         source_node = typer.prompt("Source Node ID", type=str)
+    if source_channel is None:
+        source_channel = typer.prompt("Source Channel", type=int, default=0)
+    if source_field is None:
+        source_field = typer.prompt("Source Field", type=str, default="voltage")
     if not formula:
-        formula = typer.prompt("Formula", type=str)
+        formula = typer.prompt("Formula (use <source_1> as variable)", type=str)
     if not dest_node:
         dest_node = typer.prompt("Destination Node ID", type=str)
+    if dest_channel is None:
+        dest_channel = typer.prompt("Destination Channel", type=int, default=0)
 
     payload = {
         "source_node_id": source_node,
@@ -660,6 +694,13 @@ def fusion_add(
         "destination_channel": dest_channel,
         "is_active": active,
     }
+
+    # Show summary before sending
+    console.print(f"\n[dim]─── Submitting ───[/]")
+    console.print(f"  Source:      [cyan]{source_node}[/] Ch:{source_channel} ({source_field})")
+    console.print(f"  Formula:    [yellow]{formula}[/]")
+    console.print(f"  Destination: [magenta]{dest_node}[/] Ch:{dest_channel}")
+    console.print()
 
     result = api_request("POST", "/api/fusion-rules", data=payload)
 
@@ -673,15 +714,15 @@ def fusion_add(
 @fusion_app.command("update")
 def fusion_update(
     rule_id: int = typer.Argument(..., help="Fusion Rule ID to update"),
-    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID"),
-    source_channel: Optional[int] = typer.Option(None, "--source-channel", "-sc", help="Source Channel"),
-    source_field: Optional[str] = typer.Option(None, "--source-field", "-sf", help="Source Field"),
-    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Formula"),
+    source_node: Optional[str] = typer.Option(None, "--source-node", "-sn", help="Source Node ID (e.g. C071)"),
+    source_channel: Optional[int] = typer.Option(None, "--source-channel", "-sc", help="Source channel number (0+)"),
+    source_field: Optional[str] = typer.Option(None, "--source-field", "-sf", help="JSON field name (e.g. voltage, current, power)"),
+    formula: Optional[str] = typer.Option(None, "--formula", "-f", help="Math formula using <source_1> as variable"),
     dest_node: Optional[str] = typer.Option(None, "--dest-node", "-dn", help="Destination Node ID"),
-    dest_channel: Optional[int] = typer.Option(None, "--dest-channel", "-dc", help="Destination Channel"),
+    dest_channel: Optional[int] = typer.Option(None, "--dest-channel", "-dc", help="Destination channel number (0+)"),
     active: Optional[bool] = typer.Option(None, "--active/--inactive", help="Set active state"),
 ):
-    """Update a sensor fusion rule."""
+    """Update a sensor fusion rule. Only specified fields are changed."""
     current = api_request("GET", f"/api/fusion-rules/{rule_id}")
 
     payload = {

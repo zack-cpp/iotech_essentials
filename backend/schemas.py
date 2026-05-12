@@ -74,11 +74,11 @@ class GatewayStatus(BaseModel):
 
 class SensorFusionRuleBase(BaseModel):
     source_node_id: str = Field(..., min_length=1, max_length=50)
-    source_channel: int = Field(..., ge=1, le=4)
+    source_channel: int = Field(..., ge=0)
     source_field: str = Field(default="voltage", min_length=1, max_length=50)
     formula: str = Field(..., min_length=1, max_length=500)
     destination_node_id: str = Field(..., min_length=1, max_length=50)
-    destination_channel: int = Field(..., ge=1, le=4)
+    destination_channel: int = Field(..., ge=0)
     is_active: bool = True
 
 
